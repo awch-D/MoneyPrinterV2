@@ -1,14 +1,18 @@
 import json
+import time
 from dataclasses import dataclass
 
 import requests
+from requests.exceptions import ConnectionError, Timeout
 
-from config import get_script_api_base_url, get_script_api_key, get_script_api_model
+from config import get_script_api_base_url, get_script_api_key, get_script_api_model, get_verbose
+from status import warning
 
 
 @dataclass
 class ScriptApiProvider:
     timeout_seconds: int = 120
+    max_retries: int = 5
 
     def generate_text(self, prompt: str) -> str:
         base_url = get_script_api_base_url()
@@ -22,24 +26,48 @@ class ScriptApiProvider:
         if not model:
             raise RuntimeError("Missing config: script_api_model")
 
-        response = requests.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-            },
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
-        data = response.json()
-        try:
-            return str(data["choices"][0]["message"]["content"]).strip()
-        except Exception as exc:
-            raise RuntimeError(
-                f"Script API returned unexpected payload: {json.dumps(data)[:500]}"
-            ) from exc
+        url = f"{base_url}/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.7,
+        }
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries):
+            try:
+                response = requests.post(
+                    url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout_seconds,
+                )
+                response.raise_for_status()
+                data = response.json()
+                try:
+                    return str(data["choices"][0]["message"]["content"]).strip()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Script API returned unexpected payload: {json.dumps(data)[:500]}"
+                    ) from exc
+            except (ConnectionError, Timeout) as exc:
+                last_exc = exc
+                if attempt >= self.max_retries - 1:
+                    break
+                delay = min(30.0, 2.0**attempt)
+                if get_verbose():
+                    warning(
+                        f"Script API connection failed ({exc!s}), retrying in {delay:.0f}s "
+                        f"({attempt + 1}/{self.max_retries})..."
+                    )
+                time.sleep(delay)
+
+        raise RuntimeError(
+            "Script API unreachable after retries (connection reset, timeout, or TLS). "
+            "Check network/VPN, firewall, and that script_api_base_url matches your provider "
+            "(e.g. OpenAI-compatible base ending in /v1)."
+        ) from last_exc

@@ -128,7 +128,8 @@ class ShortVideoPipeline:
 
     def generate_script_to_speech(self, script: str, tts: TTS) -> str:
         path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.wav")
-        cleaned_script = re.sub(r"[^\w\s.?!]", "", script)
+        # 保留中文标点，只去掉特殊符号
+        cleaned_script = re.sub(r"[^\w\s.?!。！？，,、；;：:\u4e00-\u9fff]", "", script)
         tts.synthesize(cleaned_script, path)
         return path
 
@@ -257,11 +258,24 @@ class ShortVideoPipeline:
         return output_path, subtitle_path
 
     def run(self, niche: str, language: str, topic: str | None = None) -> VideoBuildResult:
+        if get_verbose():
+            info("Pipeline: script → image prompts → images → TTS → subtitles → video.")
         resolved_topic = topic or self.generate_topic(niche, language)
+        if get_verbose():
+            info(f'Topic: "{resolved_topic}"')
+            info("Calling script API to generate narration (this can take a while)...")
         script = self.generate_script(resolved_topic, language)
+        if get_verbose():
+            info("Generating image prompts via script API...")
         prompts = self.generate_prompts(resolved_topic, script)
+        if get_verbose():
+            info(f"Generating {len(prompts)} images...")
         image_paths = self.generate_images(prompts)
+        if get_verbose():
+            info("Synthesizing speech (local TTS)...")
         audio_path = self.generate_script_to_speech(script, TTS())
+        if get_verbose():
+            info("Composing final video (encoding may take several minutes)...")
         video_path, subtitle_path = self.combine(image_paths, audio_path)
         return VideoBuildResult(
             topic=resolved_topic,

@@ -8,6 +8,32 @@ from config import *
 
 DEFAULT_SONG_ARCHIVE_URLS = []
 
+_LOCAL_AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac")
+
+
+def _local_songs_dirs() -> list[str]:
+    """Project dirs that may hold background music (case-sensitive FS may have `songs` vs `Songs`)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in ("Songs", "songs"):
+        path = os.path.join(ROOT_DIR, name)
+        if not os.path.isdir(path):
+            continue
+        real = os.path.realpath(path)
+        if real in seen:
+            continue
+        seen.add(real)
+        out.append(path)
+    return out
+
+
+def _dir_has_audio_files(path: str) -> bool:
+    for name in os.listdir(path):
+        p = os.path.join(path, name)
+        if os.path.isfile(p) and name.lower().endswith(_LOCAL_AUDIO_EXTS):
+            return True
+    return False
+
 
 def rem_temp_files() -> None:
     """
@@ -36,20 +62,18 @@ def fetch_songs() -> None:
     try:
         info(f" => Fetching songs...")
 
+        # If user already placed audio under Songs/ or songs/, skip network — do not look "stuck" on this step.
+        for d in _local_songs_dirs():
+            if _dir_has_audio_files(d):
+                if get_verbose():
+                    info(f" => Using local audio in {os.path.basename(d)}/ ({d}), skipping download.")
+                return
+
         files_dir = os.path.join(ROOT_DIR, "Songs")
         if not os.path.exists(files_dir):
             os.mkdir(files_dir)
             if get_verbose():
                 info(f" => Created directory: {files_dir}")
-        else:
-            existing_audio_files = [
-                name
-                for name in os.listdir(files_dir)
-                if os.path.isfile(os.path.join(files_dir, name))
-                and name.lower().endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg"))
-            ]
-            if len(existing_audio_files) > 0:
-                return
 
         configured_url = get_zip_url().strip()
         download_urls = [configured_url] if configured_url else []
@@ -111,19 +135,18 @@ def choose_random_song() -> str:
         str: The path to the chosen song.
     """
     try:
-        songs_dir = os.path.join(ROOT_DIR, "Songs")
-        songs = [
-            name
-            for name in os.listdir(songs_dir)
-            if os.path.isfile(os.path.join(songs_dir, name))
-            and name.lower().endswith((".mp3", ".wav", ".m4a", ".aac", ".ogg"))
-        ]
+        songs: list[tuple[str, str]] = []
+        for songs_dir in _local_songs_dirs():
+            for name in os.listdir(songs_dir):
+                path = os.path.join(songs_dir, name)
+                if os.path.isfile(path) and name.lower().endswith(_LOCAL_AUDIO_EXTS):
+                    songs.append((songs_dir, name))
         if len(songs) == 0:
-            warning("No audio files found in Songs directory. Background music will be skipped.")
+            warning("No audio files found in Songs/ or songs/. Background music will be skipped.")
             return ""
-        song = random.choice(songs)
+        songs_dir, song = random.choice(songs)
         success(f" => Chose song: {song}")
-        return os.path.join(ROOT_DIR, "Songs", song)
+        return os.path.join(songs_dir, song)
     except Exception as e:
         error(f"Error occurred while choosing random song: {str(e)}")
         return ""
