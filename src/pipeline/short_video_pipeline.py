@@ -22,8 +22,13 @@ from config import (
     ROOT_DIR,
     equalize_subtitles,
     get_assemblyai_api_key,
+    get_subtitle_bottom_margin,
+    get_subtitle_caption_height_ratio,
+    get_subtitle_font_color,
     get_subtitle_font_path,
     get_subtitle_font_size_config,
+    get_subtitle_stroke_color,
+    get_subtitle_stroke_width,
     get_imagemagick_path,
     get_script_sentence_length,
     get_stt_provider,
@@ -230,19 +235,31 @@ class ShortVideoPipeline:
         min_dim = min(out_w, out_h)
         cfg_sub_size = get_subtitle_font_size_config()
         subtitle_font_size = (
-            cfg_sub_size if cfg_sub_size is not None else max(48, int(100 * min_dim / 1080))
+            cfg_sub_size
+            if cfg_sub_size is not None
+            else max(34, int(62 * min_dim / 1080))
         )
         subtitle_font = get_subtitle_font_path()
+        cap_ratio = get_subtitle_caption_height_ratio()
+        caption_h = max(96, int(out_h * cap_ratio))
+        bottom_margin = get_subtitle_bottom_margin()
+        subtitle_y = max(0, out_h - caption_h - bottom_margin)
+        stroke_w = get_subtitle_stroke_width()
+        stroke_col = get_subtitle_stroke_color()
+        if stroke_col is None:
+            stroke_w = 0
 
         generator = lambda txt: TextClip(
             text=txt,
             font=subtitle_font,
             font_size=subtitle_font_size,
-            color="#FFFF00",
-            stroke_color="black",
-            stroke_width=5,
-            size=(out_w, out_h),
+            color=get_subtitle_font_color(),
+            stroke_color=stroke_col,
+            stroke_width=stroke_w,
+            size=(out_w, caption_h),
             method="caption",
+            horizontal_align="center",
+            vertical_align="bottom",
         )
 
         if get_verbose():
@@ -280,7 +297,9 @@ class ShortVideoPipeline:
         try:
             subtitle_path = self.generate_subtitles(tts_path)
             equalize_subtitles(subtitle_path, 10)
-            subtitles = SubtitlesClip(subtitle_path, make_textclip=generator).with_position(("center", "center"))
+            subtitles = SubtitlesClip(subtitle_path, make_textclip=generator).with_position(
+                ("center", subtitle_y)
+            )
         except Exception as exc:
             warning(f"Subtitles unavailable, continuing without them: {exc}")
 

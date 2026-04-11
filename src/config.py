@@ -168,6 +168,32 @@ def get_subtitle_font_size_config() -> int | None:
     return None
 
 
+def get_subtitle_font_color() -> str:
+    raw = str(_read_config().get("subtitle_font_color", "#FFFFFF")).strip()
+    return raw or "#FFFFFF"
+
+
+def get_subtitle_stroke_color() -> str | None:
+    raw = _read_config().get("subtitle_stroke_color", "black")
+    if raw is None or (isinstance(raw, str) and raw.strip().lower() in ("", "none", "null")):
+        return None
+    return str(raw).strip()
+
+
+def get_subtitle_stroke_width() -> int:
+    return max(0, int(_read_config().get("subtitle_stroke_width", 3)))
+
+
+def get_subtitle_bottom_margin() -> int:
+    return max(0, int(_read_config().get("subtitle_bottom_margin", 52)))
+
+
+def get_subtitle_caption_height_ratio() -> float:
+    """Fraction of frame height reserved for the caption text box (bottom strip)."""
+    r = float(_read_config().get("subtitle_caption_height_ratio", 0.22))
+    return max(0.12, min(0.45, r))
+
+
 def get_fonts_dir() -> str:
     return os.path.join(ROOT_DIR, "fonts")
 

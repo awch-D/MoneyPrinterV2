@@ -31,11 +31,16 @@
   "qwen3_tts_instruct": "",
   "qwen3_tts_max_chunk_chars": 400,
   "qwen3_tts_static_args": [],
-  "qwen3_tts_predict_arg_order": ["instruct", "text"],
+  "qwen3_tts_predict_arg_order": ["text", "instruct"],
   "tts_voice": "Jasper",
   "font": "bold_font.ttf",
   "subtitle_font": "",
   "subtitle_font_size": 0,
+  "subtitle_font_color": "#FFFFFF",
+  "subtitle_stroke_color": "black",
+  "subtitle_stroke_width": 3,
+  "subtitle_bottom_margin": 52,
+  "subtitle_caption_height_ratio": 0.22,
   "imagemagick_path": "/opt/homebrew/bin/magick",
   "script_sentence_length": 4
 }
