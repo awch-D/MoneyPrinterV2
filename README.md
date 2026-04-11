@@ -34,9 +34,15 @@ Edit `config.json`:
 
 ## Usage
 
+Full CLI (short video + **novel chapter** pipeline, orientation, etc.) is documented here:
+
+- **中文使用说明**: [docs/Usage.md](docs/Usage.md)
+
+Quick start (short / default capability):
+
 ```bash
 source venv/bin/activate
-python src/main.py --niche "technology" --language "English"
+PYTHONPATH=src python src/main.py --niche "technology" --language "English"
 ```
 
 With a fixed topic:

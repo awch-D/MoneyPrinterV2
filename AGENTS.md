@@ -2,10 +2,12 @@
 
 ## Project Structure & Module Organization
 - `src/` contains the application code. Use `src/main.py` as the interactive entrypoint.
+- `src/capabilities/` registers CLI capabilities (`short`, `novel_chapter`); add new video modes here and in `src/main.py` flags.
+- `src/novel/` holds chapter storyboard JSON parsing and per-segment TTS merge helpers for novel episodes.
 - `src/classes/` holds provider-specific components (for example `YouTube.py`, `Twitter.py`, `Tts.py`, `AFM.py`, `Outreach.py`).
 - Shared utilities and configuration live in modules like `src/config.py`, `src/utils.py`, `src/cache.py`, and `src/constants.py`.
 - `scripts/` contains helper workflows such as setup, preflight checks, and upload helpers.
-- `docs/` contains feature documentation; `assets/` and `fonts/` contain static resources.
+- `docs/` contains feature documentation ([Usage.md](docs/Usage.md) for CLI/workflows); `assets/` and `fonts/` contain static resources.
 
 ## Build, Test, and Development Commands
 - `bash scripts/setup_local.sh`: bootstrap local development (creates `venv`, installs deps, seeds `config.json`, runs preflight).

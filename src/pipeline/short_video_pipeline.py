@@ -1,7 +1,12 @@
+import glob
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
 from dataclasses import dataclass
+from typing import Any
 from uuid import uuid4
 
 import assemblyai as aai
@@ -35,12 +40,14 @@ from config import (
     get_threads,
     get_verbose,
     get_video_output_size,
-    get_whisper_compute_type,
-    get_whisper_device,
+    get_whisper_cli_timeout_seconds,
     get_whisper_language,
-    get_whisper_model,
-    get_whisper_model_path,
+    get_whisper_model_for_cli,
+    resolve_whisper_cli_executable,
+    whisper_cli_device_args,
+    whisper_cli_uses_fp16,
 )
+from novel.image_style_presets import append_global_style_to_image_prompt
 from providers.image_api_provider import ImageApiProvider
 from providers.script_api_provider import ScriptApiProvider
 from status import info, success, warning
@@ -66,8 +73,20 @@ class ShortVideoPipeline:
         self.image_provider = image_provider
         self.images: list[str] = []
 
+    @staticmethod
+    def _guess_image_extension(image_bytes: bytes) -> str:
+        """Gemini image APIs often return JPEG; match gemini-image-gen skill magic-byte detection."""
+        if len(image_bytes) >= 3 and image_bytes[:3] == b"\xff\xd8\xff":
+            return ".jpg"
+        if len(image_bytes) >= 8 and image_bytes[:4] == b"\x89PNG":
+            return ".png"
+        if len(image_bytes) >= 12 and image_bytes[:4] == b"RIFF" and image_bytes[8:12] == b"WEBP":
+            return ".webp"
+        return ".png"
+
     def _persist_image(self, image_bytes: bytes) -> str:
-        image_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.png")
+        ext = self._guess_image_extension(image_bytes)
+        image_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}{ext}")
         with open(image_path, "wb") as image_file:
             image_file.write(image_bytes)
         self.images.append(image_path)
@@ -150,9 +169,17 @@ class ShortVideoPipeline:
 
     def generate_images(self, prompts: list[str]) -> list[str]:
         image_paths: list[str] = []
-        for prompt in prompts:
-            image_bytes = self.image_provider.generate_image_bytes(prompt)
-            image_paths.append(self._persist_image(image_bytes))
+        total = len(prompts)
+        for idx, prompt in enumerate(prompts, start=1):
+            info(f"生图 {idx}/{total}：请求中…")
+            sys.stdout.flush()
+            image_bytes = self.image_provider.generate_image_bytes(
+                append_global_style_to_image_prompt(prompt)
+            )
+            path = self._persist_image(image_bytes)
+            image_paths.append(path)
+            info(f"生图 {idx}/{total} 已完成 → {os.path.basename(path)}")
+            sys.stdout.flush()
         if not image_paths:
             raise RuntimeError("No images were generated")
         return image_paths
@@ -164,45 +191,73 @@ class ShortVideoPipeline:
         tts.synthesize(cleaned_script, path)
         return path
 
-    def _format_srt_timestamp(self, seconds: float) -> str:
-        total_millis = max(0, int(round(seconds * 1000)))
-        hours = total_millis // 3600000
-        minutes = (total_millis % 3600000) // 60000
-        secs = (total_millis % 60000) // 1000
-        millis = total_millis % 1000
-        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
-
     def generate_subtitles_local_whisper(self, audio_path: str) -> str:
-        from faster_whisper import WhisperModel
+        """Run OpenAI ``whisper`` CLI (system install); not faster-whisper."""
+        exe = resolve_whisper_cli_executable()
+        if not exe:
+            raise RuntimeError(
+                "未找到本地 whisper 可执行文件。请安装 OpenAI Whisper（例如 "
+                "`pip install -U openai-whisper` 或 `brew install openai-whisper`），"
+                "或在 config.json 中设置 whisper_cli_path（如 /opt/homebrew/bin/whisper）。"
+            )
+        out_dir = os.path.join(ROOT_DIR, ".mp", f"whisper_cli_{uuid4()}")
+        os.makedirs(out_dir, exist_ok=True)
+        audio_abs = os.path.abspath(audio_path)
+        if not os.path.isfile(audio_abs):
+            raise FileNotFoundError(f"Whisper 输入音频不存在: {audio_abs}")
 
-        model_path = get_whisper_model_path()
-        model_id = model_path if model_path else get_whisper_model()
-        model = WhisperModel(
-            model_id,
-            device=get_whisper_device(),
-            compute_type=get_whisper_compute_type(),
-        )
-        transcribe_kw: dict = {"vad_filter": True}
+        cmd: list[str] = [
+            exe,
+            audio_abs,
+            "--model",
+            get_whisper_model_for_cli(),
+            "--output_dir",
+            out_dir,
+            "--output_format",
+            "srt",
+            "--fp16",
+            "True" if whisper_cli_uses_fp16() else "False",
+        ]
+        cmd.extend(whisper_cli_device_args())
+        thr = get_threads()
+        if thr and int(thr) > 0:
+            cmd.extend(["--threads", str(max(1, int(thr)))])
         lang = get_whisper_language()
         if lang:
-            transcribe_kw["language"] = lang
-        segments, _ = model.transcribe(audio_path, **transcribe_kw)
+            cmd.extend(["--language", lang])
+        if not get_verbose():
+            cmd.extend(["--verbose", "False"])
 
-        lines = []
-        for idx, segment in enumerate(segments, start=1):
-            text = str(segment.text).strip()
-            if not text:
-                continue
-            lines.append(str(idx))
-            lines.append(
-                f"{self._format_srt_timestamp(segment.start)} --> {self._format_srt_timestamp(segment.end)}"
+        info(f"Whisper CLI 转写中：{exe}（输出目录 {out_dir}）")
+        sys.stdout.flush()
+        timeout_s = float(get_whisper_cli_timeout_seconds())
+        try:
+            proc = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout_s,
             )
-            lines.append(text)
-            lines.append("")
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"Whisper CLI 超时（{int(timeout_s)} 秒）。可在 config.json 增大 whisper_cli_timeout_seconds。"
+            ) from exc
+
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"Whisper CLI 失败（exit {proc.returncode}）：{err[:4000]}")
+
+        base = os.path.splitext(os.path.basename(audio_abs))[0]
+        srt_candidate = os.path.join(out_dir, f"{base}.srt")
+        if not os.path.isfile(srt_candidate):
+            found = sorted(glob.glob(os.path.join(out_dir, "*.srt")))
+            if not found:
+                raise RuntimeError(f"Whisper 未生成 .srt（目录：{out_dir}）")
+            srt_candidate = found[0]
 
         srt_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.srt")
-        with open(srt_path, "w", encoding="utf-8") as file:
-            file.write("\n".join(lines))
+        shutil.copy2(srt_candidate, srt_path)
+        shutil.rmtree(out_dir, ignore_errors=True)
         return srt_path
 
     def generate_subtitles_assemblyai(self, audio_path: str) -> str:
@@ -223,15 +278,7 @@ class ShortVideoPipeline:
             return self.generate_subtitles_assemblyai(audio_path)
         return self.generate_subtitles_local_whisper(audio_path)
 
-    def combine(self, image_paths: list[str], tts_path: str) -> tuple[str, str | None]:
-        output_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.mp4")
-        threads = get_threads()
-        tts_clip = AudioFileClip(tts_path)
-        max_duration = tts_clip.duration
-        req_dur = max_duration / len(image_paths)
-        out_w, out_h = get_video_output_size()
-        target_ratio = out_w / out_h
-
+    def _subtitle_textclip_factory(self, out_w: int, out_h: int):
         min_dim = min(out_w, out_h)
         cfg_sub_size = get_subtitle_font_size_config()
         subtitle_font_size = (
@@ -249,18 +296,99 @@ class ShortVideoPipeline:
         if stroke_col is None:
             stroke_w = 0
 
-        generator = lambda txt: TextClip(
-            text=txt,
-            font=subtitle_font,
-            font_size=subtitle_font_size,
-            color=get_subtitle_font_color(),
-            stroke_color=stroke_col,
-            stroke_width=stroke_w,
-            size=(out_w, caption_h),
-            method="caption",
-            horizontal_align="center",
-            vertical_align="bottom",
-        )
+        def make_clip(txt: str) -> TextClip:
+            return TextClip(
+                text=txt,
+                font=subtitle_font,
+                font_size=subtitle_font_size,
+                color=get_subtitle_font_color(),
+                stroke_color=stroke_col,
+                stroke_width=stroke_w,
+                size=(out_w, caption_h),
+                method="caption",
+                horizontal_align="center",
+                vertical_align="bottom",
+            )
+
+        return make_clip, subtitle_y
+
+    @staticmethod
+    def _fit_image_clip(image_path: str, duration: float, out_w: int, out_h: int, fps: int = 30) -> Any:
+        target_ratio = out_w / out_h
+        clip = ImageClip(image_path).with_duration(duration).with_fps(fps)
+        r = clip.w / clip.h if clip.h else target_ratio
+        if r < target_ratio:
+            clip = clip.cropped(
+                width=clip.w,
+                height=max(1, round(clip.w / target_ratio)),
+                x_center=clip.w / 2,
+                y_center=clip.h / 2,
+            )
+        else:
+            clip = clip.cropped(
+                width=max(1, round(clip.h * target_ratio)),
+                height=clip.h,
+                x_center=clip.w / 2,
+                y_center=clip.h / 2,
+            )
+        return clip.resized((out_w, out_h))
+
+    def _finalize_with_subtitles_and_bgm(
+        self,
+        video_clip: Any,
+        tts_path: str,
+        output_path: str,
+    ) -> str | None:
+        """Attach narration + optional BGM, burn subtitles, write MP4. Closes tts_clip after write."""
+        threads = get_threads()
+        out_w, out_h = get_video_output_size()
+        tts_clip = AudioFileClip(tts_path)
+        narration_duration = float(tts_clip.duration)
+
+        make_textclip, subtitle_y = self._subtitle_textclip_factory(out_w, out_h)
+
+        subtitle_path: str | None = None
+        subtitles = None
+        try:
+            subtitle_path = self.generate_subtitles(tts_path)
+            equalize_subtitles(subtitle_path, 10)
+            subtitles = (
+                SubtitlesClip(subtitle_path, make_textclip=make_textclip)
+                .with_position(("center", subtitle_y))
+                .with_duration(narration_duration)
+            )
+        except Exception as exc:
+            warning(f"Subtitles unavailable, continuing without them: {exc}")
+
+        bgm_path = choose_random_song()
+        narration_audio = tts_clip.with_fps(44100)
+        audio_tracks = [narration_audio]
+        if bgm_path:
+            bgm = AudioFileClip(bgm_path).with_fps(44100).with_effects([afx.MultiplyVolume(0.1)])
+            bgm_len = float(bgm.duration or 0.0)
+            if bgm_len > narration_duration + 1e-3:
+                bgm = bgm.subclipped(0, narration_duration)
+            audio_tracks.append(bgm)
+        # 成片时长只跟对白走：BGM 过长已截断；合成轨再钳到对白时长，避免取最长子轨
+        final_audio = CompositeAudioClip(audio_tracks).with_duration(narration_duration)
+        base = video_clip.with_duration(narration_duration).with_audio(final_audio)
+
+        if subtitles is not None:
+            final_clip = CompositeVideoClip([base, subtitles])
+        else:
+            final_clip = base
+
+        final_clip.write_videofile(output_path, threads=threads)
+        success(f'Wrote video to "{output_path}"')
+        return subtitle_path
+
+    def combine(self, image_paths: list[str], tts_path: str) -> tuple[str, str | None]:
+        output_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.mp4")
+        tts_clip = AudioFileClip(tts_path)
+        max_duration = tts_clip.duration
+        tts_clip.close()
+        req_dur = max_duration / len(image_paths)
+        out_w, out_h = get_video_output_size()
 
         if get_verbose():
             info("[+] Combining image clips...")
@@ -269,53 +397,43 @@ class ShortVideoPipeline:
         total_duration = 0.0
         while total_duration < max_duration:
             for image_path in image_paths:
-                clip = ImageClip(image_path).with_duration(req_dur).with_fps(30)
-                r = clip.w / clip.h if clip.h else target_ratio
-                if r < target_ratio:
-                    clip = clip.cropped(
-                        width=clip.w,
-                        height=max(1, round(clip.w / target_ratio)),
-                        x_center=clip.w / 2,
-                        y_center=clip.h / 2,
-                    )
-                else:
-                    clip = clip.cropped(
-                        width=max(1, round(clip.h * target_ratio)),
-                        height=clip.h,
-                        x_center=clip.w / 2,
-                        y_center=clip.h / 2,
-                    )
-                clips.append(clip.resized((out_w, out_h)))
+                clips.append(self._fit_image_clip(image_path, req_dur, out_w, out_h))
                 total_duration += req_dur
                 if total_duration >= max_duration:
                     break
 
         final_clip = concatenate_videoclips(clips).with_fps(30)
+        subtitle_path = self._finalize_with_subtitles_and_bgm(final_clip, tts_path, output_path)
+        return output_path, subtitle_path
 
-        subtitle_path = None
-        subtitles = None
-        try:
-            subtitle_path = self.generate_subtitles(tts_path)
-            equalize_subtitles(subtitle_path, 10)
-            subtitles = SubtitlesClip(subtitle_path, make_textclip=generator).with_position(
-                ("center", subtitle_y)
+    def combine_timeline(
+        self,
+        image_paths: list[str],
+        segment_durations: list[float],
+        narration_wav_path: str,
+    ) -> tuple[str, str | None]:
+        """
+        One still per segment; each clip lasts exactly the matching segment duration.
+        Narration WAV must span the same total time (concatenated segment TTS).
+        """
+        if len(image_paths) != len(segment_durations):
+            raise ValueError(
+                f"combine_timeline: len(image_paths)={len(image_paths)} != len(segment_durations)={len(segment_durations)}"
             )
-        except Exception as exc:
-            warning(f"Subtitles unavailable, continuing without them: {exc}")
+        if not image_paths:
+            raise ValueError("combine_timeline: empty timeline")
+        output_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.mp4")
+        out_w, out_h = get_video_output_size()
 
-        bgm_path = choose_random_song()
-        audio_tracks = [tts_clip.with_fps(44100)]
-        if bgm_path:
-            bgm = AudioFileClip(bgm_path).with_fps(44100).with_effects([afx.MultiplyVolume(0.1)])
-            audio_tracks.append(bgm)
-        final_audio = CompositeAudioClip(audio_tracks)
-        final_clip = final_clip.with_audio(final_audio).with_duration(tts_clip.duration)
+        if get_verbose():
+            info("[+] Combining image clips (per-segment timeline)...")
 
-        if subtitles is not None:
-            final_clip = CompositeVideoClip([final_clip, subtitles])
-
-        final_clip.write_videofile(output_path, threads=threads)
-        success(f'Wrote video to "{output_path}"')
+        clips = [
+            self._fit_image_clip(path, float(dur), out_w, out_h)
+            for path, dur in zip(image_paths, segment_durations, strict=True)
+        ]
+        final_clip = concatenate_videoclips(clips).with_fps(30)
+        subtitle_path = self._finalize_with_subtitles_and_bgm(final_clip, narration_wav_path, output_path)
         return output_path, subtitle_path
 
     def run(

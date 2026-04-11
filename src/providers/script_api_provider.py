@@ -5,7 +5,12 @@ from dataclasses import dataclass
 import requests
 from requests.exceptions import ConnectionError, Timeout
 
-from config import get_script_api_base_url, get_script_api_key, get_script_api_model, get_verbose
+from config import (
+    get_script_api_base_url,
+    get_script_api_key,
+    get_script_api_model,
+    get_verbose,
+)
 from status import warning
 
 
@@ -14,7 +19,7 @@ class ScriptApiProvider:
     timeout_seconds: int = 120
     max_retries: int = 5
 
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, *, json_object: bool = False) -> str:
         base_url = get_script_api_base_url()
         api_key = get_script_api_key()
         model = get_script_api_model()
@@ -27,11 +32,13 @@ class ScriptApiProvider:
             raise RuntimeError("Missing config: script_api_model")
 
         url = f"{base_url}/chat/completions"
-        payload = {
+        payload: dict = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
+            "temperature": 0.5 if json_object else 0.7,
         }
+        if json_object:
+            payload["response_format"] = {"type": "json_object"}
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -46,6 +53,25 @@ class ScriptApiProvider:
                     json=payload,
                     timeout=self.timeout_seconds,
                 )
+                if json_object and response.status_code == 400:
+                    try:
+                        err_body = response.text[:400]
+                    except Exception:
+                        err_body = ""
+                    if get_verbose():
+                        warning(
+                            "Script API rejected response_format json_object; retrying without it. "
+                            f"HTTP {response.status_code} {err_body}"
+                        )
+                    payload.pop("response_format", None)
+                    payload["temperature"] = 0.7
+                    json_object = False
+                    response = requests.post(
+                        url,
+                        headers=headers,
+                        json=payload,
+                        timeout=self.timeout_seconds,
+                    )
                 response.raise_for_status()
                 data = response.json()
                 try:

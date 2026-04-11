@@ -2,6 +2,7 @@ __pycache__
 config.json
 .mp/
 venv/
+.venv/
 Songs/
 google-maps-scraper-0.9.7/
 niche.txt

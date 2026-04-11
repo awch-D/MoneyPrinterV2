@@ -3,29 +3,52 @@ import json
 import sys
 
 from art import print_banner
-from config import assert_folder_structure, get_first_time_running
-from pipeline.short_video_pipeline import ShortVideoPipeline
-from providers.image_api_provider import ImageApiProvider
-from providers.script_api_provider import ScriptApiProvider
+from capabilities.base import RunContext
+from capabilities.registry import CAPABILITY_NAMES, run_capability
+from config import assert_folder_structure, get_first_time_running, runtime_config_overrides
 from status import error, info
 from utils import fetch_songs, rem_temp_files
 
 
+def _orientation_config(orientation: str) -> dict[str, str]:
+    o = (orientation or "landscape").strip().lower()
+    if o == "portrait":
+        return {"video_output_aspect": "9:16", "nanobanana2_aspect_ratio": "9:16"}
+    return {"video_output_aspect": "16:9", "nanobanana2_aspect_ratio": "16:9"}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate a short video with script -> images -> speech -> subtitles -> compose."
+        description="MoneyPrinterV2: short video or novel-chapter narrative pipeline."
+    )
+    parser.add_argument(
+        "--capability",
+        default="short",
+        choices=list(CAPABILITY_NAMES),
+        help="short = topic/script pipeline; novel_chapter = one chapter → timed scenes + images.",
     )
     parser.add_argument(
         "--niche",
         default="",
-        help="Niche used when topic is auto-generated (not required with --script-file).",
+        help="Niche when topic is auto-generated (short capability; not required with --script-file).",
     )
-    parser.add_argument("--language", default="English", help="Script language.")
-    parser.add_argument("--topic", default="", help="Optional fixed topic. If omitted, generated from niche.")
+    parser.add_argument("--language", default="English", help="Script / narration language hint for the LLM and TTS.")
+    parser.add_argument("--topic", default="", help="Optional fixed topic or chapter title label.")
     parser.add_argument(
         "--script-file",
         default="",
-        help="Use novel/text file as narration: skips script & image APIs; placeholder background only.",
+        help="(short) Use text file as narration; skips script & image APIs; placeholder visuals.",
+    )
+    parser.add_argument(
+        "--chapter-file",
+        default="",
+        help="(novel_chapter) Path to one chapter of plain text (one episode per file).",
+    )
+    parser.add_argument(
+        "--orientation",
+        default="landscape",
+        choices=["landscape", "portrait"],
+        help="Output and image aspect: landscape 16:9 (default) or portrait 9:16.",
     )
     parser.add_argument(
         "--keep-temp",
@@ -33,8 +56,15 @@ def parse_args() -> argparse.Namespace:
         help="Do not clear existing temp files in .mp before generation.",
     )
     args = parser.parse_args()
-    if not args.script_file.strip() and not args.niche.strip():
-        parser.error("--niche is required unless --script-file is set.")
+
+    cap = args.capability.strip().lower()
+    if cap == "short":
+        if not args.script_file.strip() and not args.niche.strip():
+            parser.error("--niche is required for short capability unless --script-file is set.")
+    elif cap == "novel_chapter":
+        if not args.chapter_file.strip():
+            parser.error("--chapter-file is required for novel_chapter capability.")
+
     return args
 
 
@@ -50,17 +80,18 @@ def main() -> int:
         rem_temp_files()
     fetch_songs()
 
-    script_file = args.script_file.strip()
-    pipeline = ShortVideoPipeline(
-        script_provider=ScriptApiProvider(),
-        image_provider=ImageApiProvider(),
-    )
-    result = pipeline.run(
+    ctx = RunContext(
         niche=args.niche.strip(),
         language=args.language.strip(),
         topic=(args.topic.strip() or None),
-        script_file=script_file or None,
+        script_file=(args.script_file.strip() or None),
+        chapter_file=(args.chapter_file.strip() or None),
+        keep_temp=bool(args.keep_temp),
     )
+
+    overrides = _orientation_config(args.orientation)
+    with runtime_config_overrides(overrides):
+        result = run_capability(args.capability, ctx)
 
     print(
         json.dumps(

@@ -20,7 +20,7 @@ cp config.example.json config.json   # then fill in values
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-# macOS quick setup (auto-configures Ollama, ImageMagick, Firefox profile)
+# macOS quick setup (ImageMagick path, optional Firefox profile, venv + deps)
 bash scripts/setup_local.sh
 
 # Preflight check (validates services are reachable)
@@ -43,14 +43,12 @@ Two service categories use a string-based dispatch pattern configured in `config
 
 | Category | Config key | Options |
 |---|---|---|
-| LLM | `ollama_model` | Ollama (via `ollama` Python SDK). If empty, user picks from available models at startup. |
-| Image gen | — | `nanobanana2` (Gemini image API) |
-| STT | `stt_provider` | `local_whisper`, `third_party_assemblyai` |
-
-LLM always uses the local Ollama server. Image generation always uses Nano Banana 2.
+| LLM (script / storyboard) | `script_api_base_url`, `script_api_key`, `script_api_model` | OpenAI-compatible `/v1/chat/completions` (see `providers/script_api_provider.py`) |
+| Image gen | `nanobanana2_*` | OpenAI-compatible `/v1/images/generations` (Gemini image proxies, etc.) |
+| STT | `stt_provider` | `local_whisper` (OpenAI **`whisper` CLI** on PATH or `whisper_cli_path`), `third_party_assemblyai` |
 
 ### Key Modules
-- **`src/llm_provider.py`** — unified `generate_text(prompt)` function using the Ollama Python SDK
+- **`src/providers/script_api_provider.py`** — chat completions for scripts and novel-chapter JSON
 - **`src/config.py`** — 30+ getter functions, each re-reads `config.json` on every call (no caching). `ROOT_DIR` = project root, computed as `os.path.dirname(sys.path[0])`
 - **`src/cache.py`** — JSON file persistence in `.mp/` directory (accounts, videos, posts, products)
 - **`src/constants.py`** — menu strings, Selenium selectors (YouTube Studio, X.com, Amazon)
@@ -74,7 +72,7 @@ Uses Python's `schedule` library (in-process, not OS cron). The scheduled job sp
 All config lives in `config.json` at the project root. See `config.example.json` for the full template and `docs/Configuration.md` for reference. Key external dependencies to configure:
 - **ImageMagick** — required for MoviePy subtitle rendering (`imagemagick_path`)
 - **Firefox profile** — must be pre-logged-in to target platforms (`firefox_profile`)
-- **Ollama** — for LLM text generation (via `ollama` Python SDK)
+- **Script API** — `script_api_*` in `config.json` (or `SCRIPT_API_KEY`) for OpenAI-compatible chat
 - **Nano Banana 2** — for image generation (Gemini image API)
 - **Go** — only needed for Outreach (Google Maps scraper)
 

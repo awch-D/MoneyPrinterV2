@@ -5,12 +5,18 @@
   "script_api_model": "gpt-4.1-mini",
   "nanobanana2_api_base_url": "https://jimu.ffa.chat",
   "nanobanana2_api_key": "",
-  "nanobanana2_model": "gemini-3.1-flash-image-preview-4k",
+  "nanobanana2_model": "gemini-3.1-flash-image",
   "nanobanana2_aspect_ratio": "9:16",
+  "nanobanana2_image_timeout_seconds": 300,
+  "nanobanana2_image_max_retries": 3,
+  "image_prompt_style": "",
+  "image_prompt_style_preset": "han_guofeng_woodcut",
   "video_output_aspect": "16:9",
   "threads": 2,
   "zip_url": "",
   "stt_provider": "local_whisper",
+  "whisper_cli_path": "/opt/homebrew/bin/whisper",
+  "whisper_cli_timeout_seconds": 7200,
   "whisper_model": "large-v3-turbo",
   "whisper_model_path": "",
   "whisper_language": "",
@@ -42,5 +48,6 @@
   "subtitle_bottom_margin": 52,
   "subtitle_caption_height_ratio": 0.22,
   "imagemagick_path": "/opt/homebrew/bin/magick",
-  "script_sentence_length": 4
+  "script_sentence_length": 4,
+  "novel_chapter_max_segments": 20
 }

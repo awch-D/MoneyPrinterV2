@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import json
 import os
+import shutil
 import sys
 from typing import Tuple
 
@@ -63,23 +64,33 @@ def main() -> int:
     else:
         warn("firefox_profile is empty. Twitter/YouTube automation requires this.")
 
-    # Ollama (LLM)
-    base = str(cfg.get("ollama_base_url", "http://127.0.0.1:11434")).rstrip("/")
-    reachable, detail = check_url(f"{base}/api/tags")
-    if not reachable:
-        fail(f"Ollama is not reachable at {base}: {detail}")
+    # Script / storyboard LLM (OpenAI-compatible Chat Completions)
+    script_base = str(cfg.get("script_api_base_url", "https://api.openai.com/v1")).rstrip("/")
+    script_key = str(cfg.get("script_api_key", "") or os.environ.get("SCRIPT_API_KEY", "")).strip()
+    script_model = str(cfg.get("script_api_model", "gpt-4.1-mini")).strip()
+
+    if not script_base:
+        fail("script_api_base_url is empty")
         failures += 1
     else:
-        ok(f"Ollama reachable at {base}")
-        try:
-            tags = requests.get(f"{base}/api/tags", timeout=5).json()
-            models = [m.get("name") for m in tags.get("models", [])]
-            if models:
-                ok(f"Ollama models available: {', '.join(models[:10])}")
-            else:
-                warn("No models found on Ollama. Pull a model first (e.g. 'ollama pull llama3.2:3b').")
-        except Exception as exc:
-            warn(f"Could not validate Ollama model list: {exc}")
+        ok(f"script_api_base_url={script_base}")
+
+    if script_key:
+        ok("script_api_key is set (or SCRIPT_API_KEY in environment)")
+    else:
+        fail("script_api_key is empty (and SCRIPT_API_KEY is not set)")
+        failures += 1
+
+    if script_model:
+        ok(f"script_api_model={script_model}")
+    else:
+        warn("script_api_model is empty; chat requests may fail at the gateway")
+
+    reachable, detail = check_url(script_base, timeout=8)
+    if not reachable:
+        warn(f"script_api_base_url could not be reached: {detail}")
+    else:
+        ok(f"script API base URL reachable: {script_base}")
 
     # Nano Banana 2 (image generation)
     api_key = cfg.get("nanobanana2_api_key", "") or os.environ.get("GEMINI_API_KEY", "")
@@ -102,13 +113,16 @@ def main() -> int:
         ok(f"Nano Banana 2 base URL reachable: {nb2_base}")
 
     if stt_provider == "local_whisper":
-        try:
-            import faster_whisper  # noqa: F401
-
-            ok("faster-whisper is installed")
-        except Exception as exc:
-            fail(f"faster-whisper is not importable: {exc}")
+        cli = str(cfg.get("whisper_cli_path", "")).strip()
+        whisper_bin = cli if cli and os.path.isfile(cli) else shutil.which("whisper")
+        if not whisper_bin:
+            fail(
+                "Whisper CLI not found. Install openai-whisper (e.g. brew install openai-whisper) "
+                "or set whisper_cli_path in config.json (e.g. /opt/homebrew/bin/whisper)."
+            )
             failures += 1
+        else:
+            ok(f"Whisper CLI found: {whisper_bin}")
 
     if failures:
         print("")

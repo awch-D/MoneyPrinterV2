@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+from contextlib import contextmanager
 from typing import Any
 
 import srt_equalizer
@@ -8,10 +9,26 @@ from termcolor import colored
 
 ROOT_DIR = os.path.dirname(sys.path[0])
 
+_RUNTIME_OVERRIDE_STACK: list[dict[str, Any]] = []
+
+
+@contextmanager
+def runtime_config_overrides(updates: dict[str, Any]):
+    """Temporarily merge key/value pairs into config reads (does not write config.json)."""
+    _RUNTIME_OVERRIDE_STACK.append(dict(updates))
+    try:
+        yield
+    finally:
+        _RUNTIME_OVERRIDE_STACK.pop()
+
 
 def _read_config() -> dict[str, Any]:
     with open(os.path.join(ROOT_DIR, "config.json"), "r", encoding="utf-8") as file:
-        return json.load(file)
+        cfg: dict[str, Any] = json.load(file)
+    merged = dict(cfg)
+    for layer in _RUNTIME_OVERRIDE_STACK:
+        merged.update(layer)
+    return merged
 
 
 def assert_folder_structure() -> None:
@@ -127,7 +144,7 @@ def get_whisper_model() -> str:
 
 
 def get_whisper_model_path() -> str:
-    """If set, passed to faster_whisper as the model path (local CTranslate2 / downloaded snapshot)."""
+    """If set, passed to openai-whisper CLI as ``--model`` (local checkpoint path or model id)."""
     return str(_read_config().get("whisper_model_path", "")).strip()
 
 
@@ -143,6 +160,57 @@ def get_whisper_device() -> str:
 
 def get_whisper_compute_type() -> str:
     return str(_read_config().get("whisper_compute_type", "int8"))
+
+
+def get_whisper_cli_path() -> str:
+    """Absolute path to the ``whisper`` executable, e.g. ``/opt/homebrew/bin/whisper``. Empty: use ``PATH``."""
+    return str(_read_config().get("whisper_cli_path", "")).strip()
+
+
+def get_whisper_cli_timeout_seconds() -> int:
+    raw = _read_config().get("whisper_cli_timeout_seconds", 7200)
+    try:
+        v = int(raw)
+    except (TypeError, ValueError):
+        v = 7200
+    return max(120, min(86400, v))
+
+
+_WHISPER_CLI_MODEL_ALIASES: dict[str, str] = {
+    # faster-whisper style name → openai-whisper CLI id (see ``whisper --help``)
+    "large-v3-turbo": "turbo",
+}
+
+
+def get_whisper_model_for_cli() -> str:
+    """Model id or local path for ``whisper`` CLI ``--model``."""
+    mp = get_whisper_model_path().strip()
+    if mp:
+        return mp
+    name = get_whisper_model().strip()
+    return _WHISPER_CLI_MODEL_ALIASES.get(name.lower(), name)
+
+
+def whisper_cli_uses_fp16() -> bool:
+    """Map ``whisper_compute_type`` to openai-whisper ``--fp16``."""
+    ct = get_whisper_compute_type().lower()
+    return ct not in ("int8", "int8_float16", "int8_float32", "int8_bfloat16")
+
+
+def whisper_cli_device_args() -> list[str]:
+    dev = get_whisper_device().strip().lower()
+    if not dev or dev == "auto":
+        return []
+    return ["--device", dev]
+
+
+def resolve_whisper_cli_executable() -> str | None:
+    import shutil
+
+    p = get_whisper_cli_path().strip()
+    if p and os.path.isfile(p):
+        return p
+    return shutil.which("whisper")
 
 
 def get_assemblyai_api_key() -> str:
@@ -206,6 +274,25 @@ def get_script_sentence_length() -> int:
     return int(_read_config().get("script_sentence_length", 4))
 
 
+def get_novel_chapter_max_segments() -> int:
+    """Upper bound on LLM scene segments per chapter (cost/latency guard)."""
+    return max(3, min(60, int(_read_config().get("novel_chapter_max_segments", 20))))
+
+
+def get_image_prompt_style() -> str:
+    """Full style block appended to every image prompt. If non-empty, overrides ``image_prompt_style_preset``."""
+    return str(_read_config().get("image_prompt_style", "")).strip()
+
+
+def get_image_prompt_style_preset() -> str:
+    """
+    Built-in preset key (see ``novel.image_style_presets.STYLE_PRESETS``) when ``image_prompt_style`` is empty.
+    Use ``none`` to disable.
+    """
+    raw = _read_config().get("image_prompt_style_preset", "none")
+    return str(raw).strip() if raw is not None else "none"
+
+
 def get_script_api_base_url() -> str:
     return str(_read_config().get("script_api_base_url", "https://api.openai.com/v1")).rstrip("/")
 
@@ -233,11 +320,20 @@ def get_nanobanana2_api_key() -> str:
 
 
 def get_nanobanana2_model() -> str:
-    return str(_read_config().get("nanobanana2_model", "gemini-3.1-flash-image-preview"))
+    return str(_read_config().get("nanobanana2_model", "gemini-3.1-flash-image"))
 
 
 def get_nanobanana2_aspect_ratio() -> str:
     return str(_read_config().get("nanobanana2_aspect_ratio", "9:16"))
+
+
+def get_nanobanana2_image_timeout_seconds() -> int:
+    """HTTP read timeout for each image generation request (large models can be slow)."""
+    return max(120, min(3600, int(_read_config().get("nanobanana2_image_timeout_seconds", 900))))
+
+
+def get_nanobanana2_image_max_retries() -> int:
+    return max(1, min(8, int(_read_config().get("nanobanana2_image_max_retries", 4))))
 
 
 def get_video_output_size() -> tuple[int, int]:

@@ -1,0 +1,32 @@
+# Novel chapter capability (一章一集)
+
+The `novel_chapter` capability turns **one plain-text chapter file** into a single narrated video: structured scenes from the LLM, **one generated image per scene**, **per-scene TTS** so picture duration matches that beat, then the same **subtitles + BGM + encode** path as the short pipeline.
+
+## CLI
+
+From the project root (with `config.json` filled for script API, image API, and TTS):
+
+```bash
+python src/main.py --capability novel_chapter --chapter-file path/to/chapter.txt --language Chinese --orientation landscape
+```
+
+- `--orientation` (`landscape` default, or `portrait`) applies **only for this run** via in-memory config overrides: it sets both final video aspect (`video_output_aspect`) and image generation size (`nanobanana2_aspect_ratio`) to `16:9` or `9:16` so framing stays consistent.
+- `--topic` optional label used in logs / JSON output (defaults to the chapter filename).
+- `--niche` is unused for this capability.
+
+## How it works
+
+1. **Chapter analysis** (`src/novel/chapter_analyzer.py`): OpenAI-compatible `script_api_*` returns JSON with `style_bible`, `characters[]` (stable `look` strings), and `segments[]` (`narration`, `scene_summary`, `image_prompt`, `visible_character_ids`).
+2. **Consistency**: Each image request prepends the style bible and visible characters’ looks to the segment `image_prompt` (`build_merged_image_prompt`), then appends the optional **global画风** from `image_prompt_style` / `image_prompt_style_preset` (see `Configuration.md`).
+3. **Audio timeline** (`src/novel/chapter_audio.py`): Each `narration` is synthesized to its own WAV; durations are measured; files are merged in order for one full narration track used by Whisper/AssemblyAI.
+4. **Video** (`ShortVideoPipeline.combine_timeline`): One still per segment, `duration ==` that segment’s TTS length; then existing subtitle burn-in and BGM mix.
+
+## Configuration
+
+- `novel_chapter_max_segments` (default `20`, max `60`): upper bound on scene count per chapter (see `config.example.json`).
+- All existing keys for `script_api_*`, `nanobanana2_*`, TTS, Whisper/AssemblyAI, fonts, and threads apply unchanged.
+- `image_prompt_style` / `image_prompt_style_preset`: shared with the short pipeline; appended to every merged image prompt before the image API call.
+
+## Extending capabilities
+
+Other packaged flows (e.g. future `ppt_narrative`) should register in `src/capabilities/registry.py`, reuse `combine_timeline` when “one visual per spoken segment” applies, and keep CLI-facing options in `src/main.py`.
