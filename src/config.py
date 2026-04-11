@@ -42,12 +42,99 @@ def get_tts_voice() -> str:
     return str(_read_config().get("tts_voice", "Jasper"))
 
 
+def get_tts_backend() -> str:
+    """kitten = local KittenTTS; qwen3_http / qwen3_gradio = Gradio HTTP API (e.g. local qwen3-tts app)."""
+    return str(_read_config().get("tts_backend", "kitten")).strip().lower()
+
+
+def get_qwen3_tts_url() -> str:
+    return str(_read_config().get("qwen3_tts_url", "http://127.0.0.1:7862")).rstrip("/")
+
+
+def get_qwen3_tts_api_name() -> str:
+    """`/do_job_t` (text+instruct), `/do_job` (dropdown+ref audio), or `auto` (pick by reference_audio)."""
+    return str(_read_config().get("qwen3_tts_api_name", "/do_job_t")).strip() or "/do_job_t"
+
+
+def get_qwen3_tts_reference_audio() -> str:
+    """Local wav/mp3 path for Gradio `/do_job` prompt_audio (required by that endpoint)."""
+    return str(_read_config().get("qwen3_tts_reference_audio", "")).strip()
+
+
+def get_qwen3_tts_voices_dropdown() -> str:
+    return str(_read_config().get("qwen3_tts_voices_dropdown", "老男人")).strip() or "老男人"
+
+
+def get_qwen3_tts_prompt_text() -> str:
+    """Extra prompt for `/do_job`; empty means use qwen3_tts_instruct."""
+    return str(_read_config().get("qwen3_tts_prompt_text", "")).strip()
+
+
+def get_qwen3_tts_speed() -> float:
+    return float(_read_config().get("qwen3_tts_speed", 1.0))
+
+
+def get_qwen3_tts_batch() -> float:
+    return float(_read_config().get("qwen3_tts_batch", 8))
+
+
+def get_qwen3_tts_lang() -> str:
+    return str(_read_config().get("qwen3_tts_lang", "Chinese")).strip() or "Chinese"
+
+
+def get_qwen3_tts_model_type() -> str:
+    raw = str(_read_config().get("qwen3_tts_model_type", "0.6B")).strip()
+    return raw if raw in ("0.6B", "1.7B") else "0.6B"
+
+
+def get_qwen3_tts_instruct() -> str:
+    return str(_read_config().get("qwen3_tts_instruct", ""))
+
+
+def get_qwen3_tts_max_chunk_chars() -> int:
+    return int(_read_config().get("qwen3_tts_max_chunk_chars", 400))
+
+
+def get_qwen3_tts_gradio_chunk_size() -> float:
+    """Third argument to Gradio `/do_job_t`: predict(text, instruct, chunk_size, ...)."""
+    return float(_read_config().get("qwen3_tts_gradio_chunk_size", 200))
+
+
+def get_qwen3_tts_static_args() -> list:
+    raw = _read_config().get("qwen3_tts_static_args", [])
+    return list(raw) if isinstance(raw, list) else []
+
+
+def get_qwen3_tts_predict_arg_order() -> list[str]:
+    """Order of Gradio predict args after static_args, e.g. [\"instruct\", \"text\"] or [\"text\", \"instruct\"]."""
+    raw = _read_config().get("qwen3_tts_predict_arg_order")
+    if isinstance(raw, list) and raw:
+        return [str(x).strip() for x in raw if str(x).strip()]
+    return ["text", "instruct"]
+
+
+def get_qwen3_tts_app_dir() -> str:
+    """Directory containing the packaged `qwen3-tts` binary (run it manually before pipeline)."""
+    return str(_read_config().get("qwen3_tts_app_dir", "")).strip()
+
+
 def get_stt_provider() -> str:
     return str(_read_config().get("stt_provider", "local_whisper"))
 
 
 def get_whisper_model() -> str:
     return str(_read_config().get("whisper_model", "base"))
+
+
+def get_whisper_model_path() -> str:
+    """If set, passed to faster_whisper as the model path (local CTranslate2 / downloaded snapshot)."""
+    return str(_read_config().get("whisper_model_path", "")).strip()
+
+
+def get_whisper_language() -> str | None:
+    """Optional ISO language code for transcribe(), e.g. zh — improves accuracy when fixed."""
+    raw = str(_read_config().get("whisper_language", "")).strip()
+    return raw or None
 
 
 def get_whisper_device() -> str:
@@ -64,6 +151,21 @@ def get_assemblyai_api_key() -> str:
 
 def get_font() -> str:
     return str(_read_config().get("font", "bold_font.ttf"))
+
+
+def get_subtitle_font_path() -> str:
+    """Font file for burned-in subtitles (use a CJK .ttf/.ttc path for Chinese)."""
+    raw = str(_read_config().get("subtitle_font", "")).strip()
+    if raw and os.path.isfile(raw):
+        return raw
+    return os.path.join(get_fonts_dir(), get_font())
+
+
+def get_subtitle_font_size_config() -> int | None:
+    v = _read_config().get("subtitle_font_size")
+    if isinstance(v, (int, float)) and v > 0:
+        return int(v)
+    return None
 
 
 def get_fonts_dir() -> str:
@@ -110,6 +212,19 @@ def get_nanobanana2_model() -> str:
 
 def get_nanobanana2_aspect_ratio() -> str:
     return str(_read_config().get("nanobanana2_aspect_ratio", "9:16"))
+
+
+def get_video_output_size() -> tuple[int, int]:
+    """Final frame size (width, height). Uses video_output_width/height if set, else video_output_aspect."""
+    cfg = _read_config()
+    w, h = cfg.get("video_output_width"), cfg.get("video_output_height")
+    if isinstance(w, int) and isinstance(h, int) and w > 0 and h > 0:
+        return (w, h)
+    aspect = str(cfg.get("video_output_aspect", "16:9")).strip().lower().replace("x", ":")
+    if aspect in ("9:16", "portrait"):
+        return (1080, 1920)
+    # 16:9 and unknown values default to landscape HD
+    return (1920, 1080)
 
 
 def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:

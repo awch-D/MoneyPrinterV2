@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from uuid import uuid4
 
 import assemblyai as aai
+from PIL import Image
 from moviepy import (
     AudioFileClip,
     CompositeAudioClip,
@@ -21,16 +22,19 @@ from config import (
     ROOT_DIR,
     equalize_subtitles,
     get_assemblyai_api_key,
-    get_font,
-    get_fonts_dir,
+    get_subtitle_font_path,
+    get_subtitle_font_size_config,
     get_imagemagick_path,
     get_script_sentence_length,
     get_stt_provider,
     get_threads,
     get_verbose,
+    get_video_output_size,
     get_whisper_compute_type,
     get_whisper_device,
+    get_whisper_language,
     get_whisper_model,
+    get_whisper_model_path,
 )
 from providers.image_api_provider import ImageApiProvider
 from providers.script_api_provider import ScriptApiProvider
@@ -63,6 +67,28 @@ class ShortVideoPipeline:
             image_file.write(image_bytes)
         self.images.append(image_path)
         return image_path
+
+    def _placeholder_image_paths(self, count: int = 1) -> list[str]:
+        """Solid slate when image API is skipped (size matches video_output_* / aspect)."""
+        w, h = get_video_output_size()
+        base = Image.new("RGB", (w, h), (14, 16, 22))
+        paths: list[str] = []
+        for _ in range(max(1, count)):
+            path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}_placeholder.png")
+            base.save(path, format="PNG")
+            paths.append(path)
+        return paths
+
+    @staticmethod
+    def _load_script_file(path: str) -> str:
+        abs_path = path if os.path.isabs(path) else os.path.abspath(path)
+        if not os.path.isfile(abs_path):
+            raise FileNotFoundError(f"Script file not found: {abs_path}")
+        with open(abs_path, encoding="utf-8") as f:
+            text = f.read().strip()
+        if not text:
+            raise RuntimeError(f"Script file is empty: {abs_path}")
+        return re.sub(r"\n{3,}", "\n\n", text)
 
     def generate_topic(self, niche: str, language: str) -> str:
         prompt = (
@@ -144,12 +170,18 @@ class ShortVideoPipeline:
     def generate_subtitles_local_whisper(self, audio_path: str) -> str:
         from faster_whisper import WhisperModel
 
+        model_path = get_whisper_model_path()
+        model_id = model_path if model_path else get_whisper_model()
         model = WhisperModel(
-            get_whisper_model(),
+            model_id,
             device=get_whisper_device(),
             compute_type=get_whisper_compute_type(),
         )
-        segments, _ = model.transcribe(audio_path, vad_filter=True)
+        transcribe_kw: dict = {"vad_filter": True}
+        lang = get_whisper_language()
+        if lang:
+            transcribe_kw["language"] = lang
+        segments, _ = model.transcribe(audio_path, **transcribe_kw)
 
         lines = []
         for idx, segment in enumerate(segments, start=1):
@@ -192,15 +224,24 @@ class ShortVideoPipeline:
         tts_clip = AudioFileClip(tts_path)
         max_duration = tts_clip.duration
         req_dur = max_duration / len(image_paths)
+        out_w, out_h = get_video_output_size()
+        target_ratio = out_w / out_h
+
+        min_dim = min(out_w, out_h)
+        cfg_sub_size = get_subtitle_font_size_config()
+        subtitle_font_size = (
+            cfg_sub_size if cfg_sub_size is not None else max(48, int(100 * min_dim / 1080))
+        )
+        subtitle_font = get_subtitle_font_path()
 
         generator = lambda txt: TextClip(
             text=txt,
-            font=os.path.join(get_fonts_dir(), get_font()),
-            font_size=100,
+            font=subtitle_font,
+            font_size=subtitle_font_size,
             color="#FFFF00",
             stroke_color="black",
             stroke_width=5,
-            size=(1080, 1920),
+            size=(out_w, out_h),
             method="caption",
         )
 
@@ -212,21 +253,22 @@ class ShortVideoPipeline:
         while total_duration < max_duration:
             for image_path in image_paths:
                 clip = ImageClip(image_path).with_duration(req_dur).with_fps(30)
-                if round((clip.w / clip.h), 4) < 0.5625:
+                r = clip.w / clip.h if clip.h else target_ratio
+                if r < target_ratio:
                     clip = clip.cropped(
                         width=clip.w,
-                        height=round(clip.w / 0.5625),
+                        height=max(1, round(clip.w / target_ratio)),
                         x_center=clip.w / 2,
                         y_center=clip.h / 2,
                     )
                 else:
                     clip = clip.cropped(
-                        width=round(0.5625 * clip.h),
+                        width=max(1, round(clip.h * target_ratio)),
                         height=clip.h,
                         x_center=clip.w / 2,
                         y_center=clip.h / 2,
                     )
-                clips.append(clip.resized((1080, 1920)))
+                clips.append(clip.resized((out_w, out_h)))
                 total_duration += req_dur
                 if total_duration >= max_duration:
                     break
@@ -257,22 +299,40 @@ class ShortVideoPipeline:
         success(f'Wrote video to "{output_path}"')
         return output_path, subtitle_path
 
-    def run(self, niche: str, language: str, topic: str | None = None) -> VideoBuildResult:
+    def run(
+        self,
+        niche: str,
+        language: str,
+        topic: str | None = None,
+        *,
+        script_file: str | None = None,
+    ) -> VideoBuildResult:
+        if script_file:
+            if get_verbose():
+                info("Pipeline (text file): script file → TTS → subtitles + BGM → video (placeholder visuals).")
+            script = self._load_script_file(script_file)
+            resolved_topic = (topic or "").strip() or os.path.basename(script_file)
+            if get_verbose():
+                info(f'Topic label: "{resolved_topic}"')
+                info("Skipping script / image APIs; using solid placeholder frame(s).")
+            image_paths = self._placeholder_image_paths(1)
+        else:
+            if get_verbose():
+                info("Pipeline: script → image prompts → images → TTS → subtitles → video.")
+            resolved_topic = topic or self.generate_topic(niche, language)
+            if get_verbose():
+                info(f'Topic: "{resolved_topic}"')
+                info("Calling script API to generate narration (this can take a while)...")
+            script = self.generate_script(resolved_topic, language)
+            if get_verbose():
+                info("Generating image prompts via script API...")
+            prompts = self.generate_prompts(resolved_topic, script)
+            if get_verbose():
+                info(f"Generating {len(prompts)} images...")
+            image_paths = self.generate_images(prompts)
+
         if get_verbose():
-            info("Pipeline: script → image prompts → images → TTS → subtitles → video.")
-        resolved_topic = topic or self.generate_topic(niche, language)
-        if get_verbose():
-            info(f'Topic: "{resolved_topic}"')
-            info("Calling script API to generate narration (this can take a while)...")
-        script = self.generate_script(resolved_topic, language)
-        if get_verbose():
-            info("Generating image prompts via script API...")
-        prompts = self.generate_prompts(resolved_topic, script)
-        if get_verbose():
-            info(f"Generating {len(prompts)} images...")
-        image_paths = self.generate_images(prompts)
-        if get_verbose():
-            info("Synthesizing speech (local TTS)...")
+            info("Synthesizing speech (TTS)...")
         audio_path = self.generate_script_to_speech(script, TTS())
         if get_verbose():
             info("Composing final video (encoding may take several minutes)...")
