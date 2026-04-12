@@ -5,7 +5,7 @@ import sys
 
 from classes.Tts import TTS
 from capabilities.base import RunContext
-from config import ROOT_DIR, get_verbose
+from config import ROOT_DIR, get_tts_backend, get_verbose
 from novel.chapter_analyzer import analyze_chapter, build_merged_image_prompt
 from novel.chapter_audio import synthesize_segments_to_merged_wav
 from pipeline.short_video_pipeline import ShortVideoPipeline, VideoBuildResult
@@ -51,7 +51,13 @@ class NovelChapterCapability:
         narrations = [s.narration for s in plan.segments]
         if get_verbose():
             info("Synthesizing per-segment TTS and merging audio...")
-        _seg_wavs, durations, merged_wav = synthesize_segments_to_merged_wav(narrations, TTS())
+        tts_engine = TTS()
+        if get_verbose():
+            info(
+                f"Novel chapter TTS: single engine instance (backend={get_tts_backend()!r}); "
+                "every segment uses the same configured voice / reference."
+            )
+        _seg_wavs, durations, merged_wav = synthesize_segments_to_merged_wav(narrations, tts_engine)
 
         if get_verbose():
             info("Composing timeline video (per-segment durations)...")

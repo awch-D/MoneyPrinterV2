@@ -9,6 +9,7 @@ from config import (
     get_nanobanana2_api_base_url,
     get_nanobanana2_api_key,
     get_nanobanana2_aspect_ratio,
+    get_nanobanana2_ignore_env_proxy,
     get_nanobanana2_image_max_retries,
     get_nanobanana2_image_timeout_seconds,
     get_nanobanana2_model,
@@ -78,12 +79,15 @@ def _decode_b64_json_field(raw: str) -> bytes:
     return base64.b64decode(raw_b64)
 
 
-def _image_bytes_from_generation_response(body: dict, *, url_timeout: int = 120) -> bytes:
+def _image_bytes_from_generation_response(
+    body: dict, *, url_timeout: int = 120, session: requests.Session | None = None
+) -> bytes:
     item = body["data"][0]
     if "b64_json" in item and item["b64_json"]:
         return _decode_b64_json_field(str(item["b64_json"]))
     if "url" in item and item["url"]:
-        r = requests.get(str(item["url"]), timeout=url_timeout)
+        sess = session or requests.Session()
+        r = sess.get(str(item["url"]), timeout=url_timeout)
         r.raise_for_status()
         return r.content
     raise RuntimeError(f"Image API response missing b64_json and url: {list(item.keys())}")
@@ -119,11 +123,14 @@ class ImageApiProvider:
 
         timeout = self.timeout_seconds
         max_retries = get_nanobanana2_image_max_retries()
+        session = requests.Session()
+        if get_nanobanana2_ignore_env_proxy():
+            session.trust_env = False
         last_exc: Exception | None = None
 
         for attempt in range(max_retries):
             try:
-                response = requests.post(
+                response = session.post(
                     endpoint,
                     headers=headers,
                     json=payload,
@@ -131,7 +138,7 @@ class ImageApiProvider:
                 )
                 response.raise_for_status()
                 body = response.json()
-                return _image_bytes_from_generation_response(body)
+                return _image_bytes_from_generation_response(body, session=session)
             except (Timeout, ConnectionError) as exc:
                 last_exc = exc
                 warning(

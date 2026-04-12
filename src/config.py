@@ -336,6 +336,11 @@ def get_nanobanana2_image_max_retries() -> int:
     return max(1, min(8, int(_read_config().get("nanobanana2_image_max_retries", 4))))
 
 
+def get_nanobanana2_ignore_env_proxy() -> bool:
+    """When True, image HTTP calls use trust_env=False (ignore HTTP(S)_PROXY / ALL_PROXY)."""
+    return bool(_read_config().get("nanobanana2_ignore_env_proxy", False))
+
+
 def get_video_output_size() -> tuple[int, int]:
     """Final frame size (width, height). Uses video_output_width/height if set, else video_output_aspect."""
     cfg = _read_config()
@@ -347,6 +352,51 @@ def get_video_output_size() -> tuple[int, int]:
         return (1080, 1920)
     # 16:9 and unknown values default to landscape HD
     return (1920, 1080)
+
+
+def get_video_fps() -> int:
+    return max(12, min(60, int(_read_config().get("video_fps", 30))))
+
+
+def get_video_ken_burns_enabled() -> bool:
+    return bool(_read_config().get("video_ken_burns_enabled", True))
+
+
+def get_video_ken_burns_zoom_min() -> float:
+    return max(1.0, float(_read_config().get("video_ken_burns_zoom_min", 1.05)))
+
+
+def get_video_ken_burns_zoom_max() -> float:
+    return max(1.0, float(_read_config().get("video_ken_burns_zoom_max", 1.10)))
+
+
+def get_video_transition() -> str:
+    """none | page_flip | random_page_flip. Also accepts legacy key ``transition``."""
+    cfg = _read_config()
+    raw = cfg.get("video_transition")
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        raw = cfg.get("transition", "none")
+    return str(raw or "none").strip().lower() or "none"
+
+
+def get_video_page_flip_probability() -> float:
+    v = float(_read_config().get("video_page_flip_probability", 0.35))
+    return max(0.0, min(1.0, v))
+
+
+def get_video_page_flip_duration_seconds() -> float:
+    v = float(_read_config().get("video_page_flip_duration_seconds", 0.38))
+    return max(0.05, min(2.0, v))
+
+
+def get_video_transition_random_seed() -> int | None:
+    raw = _read_config().get("video_transition_random_seed")
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
 
 
 def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:

@@ -18,7 +18,6 @@ from moviepy import (
     ImageClip,
     TextClip,
     afx,
-    concatenate_videoclips,
 )
 from moviepy.video.tools.subtitles import SubtitlesClip
 
@@ -39,7 +38,15 @@ from config import (
     get_stt_provider,
     get_threads,
     get_verbose,
+    get_video_fps,
+    get_video_ken_burns_enabled,
+    get_video_ken_burns_zoom_max,
+    get_video_ken_burns_zoom_min,
     get_video_output_size,
+    get_video_page_flip_duration_seconds,
+    get_video_page_flip_probability,
+    get_video_transition,
+    get_video_transition_random_seed,
     get_whisper_cli_timeout_seconds,
     get_whisper_language,
     get_whisper_model_for_cli,
@@ -52,6 +59,7 @@ from providers.image_api_provider import ImageApiProvider
 from providers.script_api_provider import ScriptApiProvider
 from status import info, success, warning
 from utils import choose_random_song
+from video_motion import build_visual_timeline_clips
 
 # MoviePy v2 removed change_settings. Keep compatibility by exporting a known binary path.
 os.environ["IMAGEMAGICK_BINARY"] = get_imagemagick_path()
@@ -313,6 +321,28 @@ class ShortVideoPipeline:
         return make_clip, subtitle_y
 
     @staticmethod
+    def _align_timeline_durations_to_merged_wav(
+        segment_durations: list[float],
+        narration_wav_path: str,
+        eps: float = 0.08,
+    ) -> list[float]:
+        """Scale segment lengths so visual timeline matches merged narration WAV duration."""
+        total = sum(segment_durations)
+        if total <= 0:
+            return segment_durations
+        ac = AudioFileClip(narration_wav_path)
+        try:
+            audio_dur = float(ac.duration or 0.0)
+        finally:
+            ac.close()
+        if audio_dur <= 0:
+            return segment_durations
+        if abs(total - audio_dur) <= eps:
+            return segment_durations
+        scale = audio_dur / total
+        return [max(0.04, float(d) * scale) for d in segment_durations]
+
+    @staticmethod
     def _fit_image_clip(image_path: str, duration: float, out_w: int, out_h: int, fps: int = 30) -> Any:
         target_ratio = out_w / out_h
         clip = ImageClip(image_path).with_duration(duration).with_fps(fps)
@@ -332,6 +362,30 @@ class ShortVideoPipeline:
                 y_center=clip.h / 2,
             )
         return clip.resized((out_w, out_h))
+
+    def _compose_still_sequence(
+        self,
+        image_paths: list[str],
+        segment_durations: list[float],
+        out_w: int,
+        out_h: int,
+    ) -> Any:
+        """Ken Burns + optional page-flip transitions; durations must match narration timeline."""
+        fps = get_video_fps()
+        return build_visual_timeline_clips(
+            image_paths,
+            [float(d) for d in segment_durations],
+            out_w,
+            out_h,
+            fps=fps,
+            ken_burns=get_video_ken_burns_enabled(),
+            zoom_min=get_video_ken_burns_zoom_min(),
+            zoom_max=get_video_ken_burns_zoom_max(),
+            transition_mode=get_video_transition(),
+            page_flip_probability=get_video_page_flip_probability(),
+            page_flip_duration_seconds=get_video_page_flip_duration_seconds(),
+            transition_random_seed=get_video_transition_random_seed(),
+        )
 
     def _finalize_with_subtitles_and_bgm(
         self,
@@ -378,7 +432,20 @@ class ShortVideoPipeline:
         else:
             final_clip = base
 
-        final_clip.write_videofile(output_path, threads=threads)
+        # MP4: H.264 + AAC + yuv420p + faststart = standard single-file deliverable (not MP3-in-MP4).
+        ext = os.path.splitext(output_path)[1].lower()
+        if ext == ".mp4":
+            final_clip.write_videofile(
+                output_path,
+                threads=threads,
+                codec="libx264",
+                audio_codec="aac",
+                preset="medium",
+                pixel_format="yuv420p",
+                ffmpeg_params=["-movflags", "+faststart"],
+            )
+        else:
+            final_clip.write_videofile(output_path, threads=threads)
         success(f'Wrote video to "{output_path}"')
         return subtitle_path
 
@@ -393,16 +460,18 @@ class ShortVideoPipeline:
         if get_verbose():
             info("[+] Combining image clips...")
 
-        clips = []
+        paths_order: list[str] = []
+        durs_order: list[float] = []
         total_duration = 0.0
         while total_duration < max_duration:
             for image_path in image_paths:
-                clips.append(self._fit_image_clip(image_path, req_dur, out_w, out_h))
+                paths_order.append(image_path)
+                durs_order.append(req_dur)
                 total_duration += req_dur
                 if total_duration >= max_duration:
                     break
 
-        final_clip = concatenate_videoclips(clips).with_fps(30)
+        final_clip = self._compose_still_sequence(paths_order, durs_order, out_w, out_h)
         subtitle_path = self._finalize_with_subtitles_and_bgm(final_clip, tts_path, output_path)
         return output_path, subtitle_path
 
@@ -425,14 +494,21 @@ class ShortVideoPipeline:
         output_path = os.path.join(ROOT_DIR, ".mp", f"{uuid4()}.mp4")
         out_w, out_h = get_video_output_size()
 
+        raw_durs = [float(d) for d in segment_durations]
+        aligned_durations = self._align_timeline_durations_to_merged_wav(
+            raw_durs,
+            narration_wav_path,
+        )
+        if get_verbose() and abs(sum(raw_durs) - sum(aligned_durations)) > 0.05:
+            warning(
+                "Scaled per-segment clip durations to match merged narration WAV "
+                f"({sum(raw_durs):.2f}s → {sum(aligned_durations):.2f}s)."
+            )
+
         if get_verbose():
             info("[+] Combining image clips (per-segment timeline)...")
 
-        clips = [
-            self._fit_image_clip(path, float(dur), out_w, out_h)
-            for path, dur in zip(image_paths, segment_durations, strict=True)
-        ]
-        final_clip = concatenate_videoclips(clips).with_fps(30)
+        final_clip = self._compose_still_sequence(image_paths, aligned_durations, out_w, out_h)
         subtitle_path = self._finalize_with_subtitles_and_bgm(final_clip, narration_wav_path, output_path)
         return output_path, subtitle_path
 
