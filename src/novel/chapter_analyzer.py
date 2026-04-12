@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from config import get_novel_chapter_max_segments, get_verbose
+from config import get_novel_chapter_image_prompt_suffix, get_verbose
 from .chapter_plan import ChapterPlan, SceneSegment
 from .image_style_presets import append_global_style_to_image_prompt
 from .segment_schema import parse_chapter_plan_json
@@ -21,16 +21,40 @@ def build_merged_image_prompt(plan: ChapterPlan, seg: SceneSegment) -> str:
     if seg.scene_summary:
         parts.append(f"Scene context: {seg.scene_summary}")
     parts.append(seg.image_prompt)
-    return append_global_style_to_image_prompt("\n".join(parts))
+    merged = "\n".join(parts)
+    suffix = get_novel_chapter_image_prompt_suffix()
+    if suffix:
+        merged = f"{merged}\n{suffix}"
+    return append_global_style_to_image_prompt(merged)
 
 
-def _analysis_prompt(chapter_text: str, language: str, max_segments: int) -> str:
+def _analysis_prompt(chapter_text: str, language: str, max_segments: int | None) -> str:
+    if max_segments is not None:
+        segment_rules = f"""1) Read the chapter. Split into **at most {max_segments}** segments while covering the narrative as fully as possible within that budget—do not drop the ending.
+2) Prefer **shot-level** beats (one image + one short VO each), not long plot chunks. If the budget is tight, merge only **adjacent micro-beats**; never collapse unrelated events into one segment.
+3) Each segment's VO should still target **5–8 seconds** at normal pace in {language} when possible; only merge beats when needed to stay within the segment budget."""
+        constraints = f"""- segments.length must be between 3 and {max_segments} (inclusive)."""
+    else:
+        segment_rules = f"""1) Read the **full** chapter from start to finish. Break it into **shot-level** segments: each segment = **one still image** and **one voiceover clip** for a **single narrative beat** (one turn in action, emotion, revelation, or locale)—like a cut in film. Do **not** merge multiple beats into one segment to reduce count.
+2) **Narration length (strict, audio–picture sync)**: Each segment's narration must target **5–8 seconds** at normal speaking pace in {language}. For **Chinese**, assume roughly **3–4 characters per second**—so usually **one short sentence** and typically **under ~28 characters** per segment. If a source sentence is longer, packs several clauses, or would exceed ~8s when read aloud, **split** into consecutive segments. **Never** use one segment for a whole novel paragraph or a multi-beat block that would read longer than ~8 seconds.
+3) **1 beat = 1 visual idea**: If one written sentence combines several clauses (e.g. time/place + event + reaction), split so each segment shows **one clear still** the listener can hold for 5–8s. Prefer **finer** cuts over “plot-level” lumps where one image must cover 10–18s of VO (that causes audio–video drift in short-form video).
+4) **Camera progression**: within a dramatic sequence use **establishing ultra-wide → wide → medium → close / tight** as tension rises. Each image_prompt must **name the shot scale** in English (e.g. ultra-wide establishing, high-angle wide, medium shot, medium close-up, tight close-up, extreme close-up) plus lighting and composition.
+5) **Time / place jumps**: when the story jumps in time or geography (e.g. border to capital days later), use **separate segments** before and after the jump; in image_prompt note **transition intent** (e.g. hard cut, cross-dissolve / cross-fade mood) so the edit reads clearly.
+6) **Visual anchors**: keep a coherent palette across shots (e.g. deep indigo night, amber torchlight, distant beacon orange) for continuity.
+7) **Completeness**: cover every important beat from the source. **Do not mirror the chapter's paragraph breaks** if that yields long VO—subdivide **inside** paragraphs. When unsure whether to split, **split** for tighter sync."""
+        constraints = """- Minimum 3 segments; **no upper limit**—use as many shots as needed so **no** segment's VO is routinely longer than ~8 seconds at normal pace."""
+
+    tail = f"""A) Each segment: narration (voiceover in {language}), scene_summary, image_prompt (English), visible_character_ids.
+B) style_bible: one short paragraph binding art era, palette, and camera language (e.g. wide for scope, push-in for tension, close-ups for emotion).
+C) scene_summary: one non-empty line—what **this shot** shows (beat + framing role), not a whole scene synopsis.
+D) image_prompt: English only; must match **only** that segment's narration; include shot scale, lighting, key subjects, and where relevant transition hints (e.g. cross-dissolve after a time jump).
+E) characters[]: every **named or recurring** on-screen figure gets an id + fixed look; crowds without lines may omit ids (empty visible_character_ids)."""
+
     return f"""You are a storyboard director for ONE episode = ONE chapter of a narrative novel.
 
 Task:
-1) Read the chapter (may be long). Split it into {max_segments} or fewer visual scenes.
-2) Each scene must have: narration (spoken voiceover in {language}), one cinematic image_prompt, and which characters appear.
-3) Keep a consistent visual style across the episode.
+{segment_rules}
+{tail}
 
 Output rules:
 - Return ONLY a single JSON object, no markdown fences, no commentary.
@@ -43,19 +67,19 @@ Output rules:
   ],
   "segments": [
     {{
-      "narration": "paragraph or sentences for voiceover this beat",
-      "scene_summary": "one line what happens",
-      "image_prompt": "English cinematic description; must match narration; include lighting and composition",
+      "narration": "one short sentence for this shot only; target 5-8s VO in the output language",
+      "scene_summary": "one line: this shot's beat and framing role",
+      "image_prompt": "English: shot scale + cinematic description + lighting; match narration only",
       "visible_character_ids": ["c1"]
     }}
   ]
 }}
 
 Constraints:
-- segments.length between 3 and {max_segments}.
-- Every image_prompt must reflect its narration for that same segment.
-- visible_character_ids must reference existing character id values.
-- If the chapter names no people, invent minimal character ids for recurring figures.
+{constraints}
+- Every image_prompt must reflect its narration for that same segment only.
+- visible_character_ids must reference existing character id values (use [] if no named character).
+- Register characters for all recurring named figures who appear on screen.
 
 Chapter text:
 ---
@@ -79,8 +103,8 @@ def analyze_chapter(
     *,
     max_segments: int | None = None,
 ) -> ChapterPlan:
-    cap = max_segments if max_segments is not None else get_novel_chapter_max_segments()
-    prompt = _analysis_prompt(chapter_text.strip(), language, cap)
+    """Split chapter into scenes via LLM. By default there is **no** segment cap; pass ``max_segments`` only for tests or manual budgets."""
+    prompt = _analysis_prompt(chapter_text.strip(), language, max_segments)
     if get_verbose():
         info("Calling script API for chapter storyboard (JSON)...")
     raw = script_provider.generate_text(prompt, json_object=True)
@@ -103,11 +127,4 @@ def analyze_chapter(
         if plan is None:
             raise RuntimeError(f"Chapter storyboard JSON invalid after repairs: {last_err!s}") from last_err
 
-    if len(plan.segments) > cap:
-        warning(f"Chapter has {len(plan.segments)} segments; truncating to {cap}.")
-        plan = ChapterPlan(
-            style_bible=plan.style_bible,
-            characters=plan.characters,
-            segments=plan.segments[:cap],
-        )
     return plan

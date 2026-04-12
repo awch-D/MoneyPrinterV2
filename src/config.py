@@ -274,9 +274,9 @@ def get_script_sentence_length() -> int:
     return int(_read_config().get("script_sentence_length", 4))
 
 
-def get_novel_chapter_max_segments() -> int:
-    """Upper bound on LLM scene segments per chapter (cost/latency guard)."""
-    return max(3, min(60, int(_read_config().get("novel_chapter_max_segments", 20))))
+def get_novel_chapter_image_prompt_suffix() -> str:
+    """Appended to every merged novel-chapter image prompt (e.g. negative / avoid list). Empty string disables."""
+    return str(_read_config().get("novel_chapter_image_prompt_suffix", "") or "").strip()
 
 
 def get_image_prompt_style() -> str:

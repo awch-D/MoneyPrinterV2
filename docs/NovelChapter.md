@@ -17,13 +17,15 @@ python src/main.py --capability novel_chapter --chapter-file path/to/chapter.txt
 ## How it works
 
 1. **Chapter analysis** (`src/novel/chapter_analyzer.py`): OpenAI-compatible `script_api_*` returns JSON with `style_bible`, `characters[]` (stable `look` strings), and `segments[]` (`narration`, `scene_summary`, `image_prompt`, `visible_character_ids`).
-2. **Consistency**: Each image request prepends the style bible and visible characters’ looks to the segment `image_prompt` (`build_merged_image_prompt`), then appends the optional **global画风** from `image_prompt_style` / `image_prompt_style_preset` (see `Configuration.md`).
+2. **Consistency**: Each image request prepends the style bible and visible characters’ looks to the segment `image_prompt` (`build_merged_image_prompt`), then appends optional `novel_chapter_image_prompt_suffix`, then the optional **global画风** from `image_prompt_style` / `image_prompt_style_preset` (see `Configuration.md`).
 3. **Audio timeline** (`src/novel/chapter_audio.py`): Each `narration` is synthesized to its own WAV; durations are measured; files are merged in order for one full narration track used by Whisper/AssemblyAI.
 4. **Video** (`ShortVideoPipeline.combine_timeline`): One still per segment, `duration ==` that segment’s TTS length; then existing subtitle burn-in and BGM mix.
 
 ## Configuration
 
-- `novel_chapter_max_segments` (default `20`, max `60`): upper bound on scene count per chapter (see `config.example.json`).
+- Storyboard segmentation targets **shot-level** units (one beat per segment, narration targeting **5–8s** VO; for Chinese ~3–4 chars/s, usually one short sentence; do not use one segment per novel paragraph if that exceeds ~8s; explicit shot scale in each `image_prompt`, ultra-wide→tight progression where tension builds). See `src/novel/chapter_analyzer.py`.
+- Scene count is **not** capped in code: long chapters yield more segments. For a **temporary** cap when experimenting, use `python scripts/preview_chapter_segments.py --max-segments N`.
+- `novel_chapter_image_prompt_suffix` (optional): appended to every merged image prompt for novel chapters (e.g. shared avoid / quality line); see `Configuration.md`.
 - All existing keys for `script_api_*`, `nanobanana2_*`, TTS, Whisper/AssemblyAI, fonts, and threads apply unchanged.
 - `image_prompt_style` / `image_prompt_style_preset`: shared with the short pipeline; appended to every merged image prompt before the image API call.
 

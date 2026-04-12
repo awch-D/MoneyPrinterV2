@@ -52,8 +52,9 @@ pip install -r requirements.txt
 | 脚本 / 分镜 LLM | `script_api_base_url`, `script_api_key`, `script_api_model` |
 | 生图 | `nanobanana2_api_base_url`, `nanobanana2_api_key`（或环境变量 `GEMINI_API_KEY`）, `nanobanana2_model` |
 | 生图比例 / 超时 | `nanobanana2_aspect_ratio`（须为比例字符串如 `16:9`）, `nanobanana2_image_timeout_seconds`, `nanobanana2_image_max_retries` |
-| 小说章集分段上限 | `novel_chapter_max_segments` |
 | 其它 | TTS、Whisper、`threads` 等见 [Configuration.md](./Configuration.md) |
+
+小说章集（`novel_chapter`）分段数量由模型按全文叙事决定，**不设配置项上限**；长章会对应更多分镜与更多张图。
 
 ---
 
@@ -188,7 +189,7 @@ curl -sS -m 300 -X POST "https://你的代理域名/v1/images/generations" \
 ## 常见问题
 
 1. **生图很慢或超时**  
-   属正常现象（尤其 4K、多段分镜串行）。可提高 `nanobanana2_image_timeout_seconds`，并保证网络稳定；或减少 `novel_chapter_max_segments` / 换更快模型（需代理支持）。
+   属正常现象（尤其 4K、多段分镜串行；长章分镜多会更久）。可提高 `nanobanana2_image_timeout_seconds`，并保证网络稳定；或换更快生图模型（需代理支持）。分段预览可加 `--max-segments`：`scripts/preview_chapter_segments.py`。
 
 2. **小说章集 JSON 解析失败**  
    已对接 `response_format: json_object`（若网关支持）与多次 repair；仍失败时请检查 `script_api_*` 是否指向兼容的 Chat Completions 网关。

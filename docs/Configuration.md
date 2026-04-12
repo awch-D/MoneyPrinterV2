@@ -29,7 +29,7 @@ For how to run the CLI (short vs novel chapter, orientation, examples), see [Usa
 - `image_prompt_style`: `string` - Optional **full** style block appended to every image prompt (short + novel chapter). If non-empty, it **overrides** `image_prompt_style_preset`. Use for fully custom styles without editing code.
 - `image_prompt_style_preset`: `string` - When `image_prompt_style` is empty, selects a built-in template from `src/novel/image_style_presets.py`: `none` (no extra block), `han_guofeng_woodcut` (汉代国风木刻暗黑风，项目默认示例), `cinematic_clean` (英文电影干净风). Unknown keys log a warning and apply no style.
 - `video_output_aspect`: `string` - Final MP4 layout: `16:9` (default landscape) or `9:16` / `portrait` for vertical HD (see `get_video_output_size()` in `src/config.py`).
-- `novel_chapter_max_segments`: `number` - Upper bound on LLM scene splits for `--capability novel_chapter` (default `20`, clamped between 3 and 60 in code).
+- `novel_chapter_image_prompt_suffix`: `string` - Appended to every **merged** novel-chapter image prompt after `style_bible`, character looks, scene context, and segment `image_prompt` (before the global `image_prompt_style` / preset). Use for a shared “avoid / negative” line in natural language. Empty string disables.
 - `threads`: `number` - The amount of threads that will be used to execute operations, e.g. writing to a file using MoviePy.
 - `is_for_kids`: `boolean` - If `true`, the application will upload the video to YouTube Shorts as a video for kids.
 - `google_maps_scraper`: `string` - The URL to the Google Maps scraper. This will be used to scrape Google Maps for local businesses. It is recommended to use the default value.

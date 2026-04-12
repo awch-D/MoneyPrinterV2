@@ -49,5 +49,5 @@
   "subtitle_caption_height_ratio": 0.22,
   "imagemagick_path": "/opt/homebrew/bin/magick",
   "script_sentence_length": 4,
-  "novel_chapter_max_segments": 20
+  "novel_chapter_image_prompt_suffix": "Avoid: modern elements, plastic CGI look, 3D game render, cartoon, anime, deformed faces, extra limbs, text overlays, watermarks, blurry, low quality, anachronistic architecture or costumes inconsistent with Tang Dynasty."
 }
