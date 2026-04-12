@@ -30,11 +30,13 @@ For how to run the CLI (short vs novel chapter, orientation, examples), see [Usa
 - `image_prompt_style_preset`: `string` - When `image_prompt_style` is empty, selects a built-in template from `src/novel/image_style_presets.py`: `none` (no extra block), `han_guofeng_woodcut` (汉代国风木刻暗黑风，项目默认示例), `cinematic_clean` (英文电影干净风). Unknown keys log a warning and apply no style.
 - `video_output_aspect`: `string` - Final MP4 layout: `16:9` (default landscape) or `9:16` / `portrait` for vertical HD (see `get_video_output_size()` in `src/config.py`).
 - `video_fps`: `number` - Output frame rate for still sequences (default `30`).
-- `video_ken_burns_enabled`: `boolean` - If `true`, each image uses a slow pan right + zoom between `video_ken_burns_zoom_min` and `video_ken_burns_zoom_max` (default `1.05`–`1.1`).
-- `video_transition`: `string` - `none` | `page_flip` (between every segment) | `random_page_flip` (probabilistic). Alias: top-level `transition` is read if `video_transition` is empty.
+- `video_ken_burns_enabled`: `boolean` - If `true`, each image uses slow zoom between `video_ken_burns_zoom_min` and `video_ken_burns_zoom_max` (code defaults `1.03`–`1.07`). Optional horizontal pan is controlled by `video_ken_burns_pan_extent` (default `0` = zoom only, less “shaky” feel than full pan).
+- `video_ken_burns_pan_extent` / `video_ken_burns_pan_max_width_ratio`: pan strength and pixel cap; see `src/config.py`.
+- `video_transition`: `string` - `none` | `page_flip` (between every segment) | `random_page_flip` (probabilistic). Alias: top-level `transition` is read if `video_transition` is empty. Example config uses `none` to avoid slide transitions that read as jitter.
 - `video_page_flip_probability`: `number` - Used when `video_transition` is `random_page_flip` (default `0.35`).
 - `video_page_flip_duration_seconds`: `number` - Length of each page-flip clip; adjacent segments are each shortened by half of this so total duration matches audio (default `0.38`).
 - `video_transition_random_seed`: `number` | `null` - Fix random flips for reproducibility; `null` = nondeterministic.
+- `audio_merge_crossfade_ms`: `number` - When merging per-segment novel chapter WAVs, linear crossfade length in milliseconds at each join (default `15`, max `80`; set `0` to disable). Shortens the merged file slightly; `combine_timeline` scales segment lengths to the merged WAV.
 - `novel_chapter_image_prompt_suffix`: `string` - Appended to every **merged** novel-chapter image prompt after `style_bible`, character looks, scene context, and segment `image_prompt` (before the global `image_prompt_style` / preset). Use for a shared “avoid / negative” line in natural language. Empty string disables.
 - `threads`: `number` - The amount of threads that will be used to execute operations, e.g. writing to a file using MoviePy.
 - `is_for_kids`: `boolean` - If `true`, the application will upload the video to YouTube Shorts as a video for kids.

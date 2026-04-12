@@ -2,7 +2,8 @@
 """
 Re-compose video from a timeline manifest (images + merged narration + per-segment durations).
 
-No script API, image API, or TTS — only MoviePy + Whisper + BGM like a normal combine_timeline run.
+No script API, image API, or TTS — MoviePy + optional script-timeline subtitles + BGM.
+If the manifest includes ``subtitle_segment_texts`` (from a novel_chapter run), subtitles match TTS script instead of Whisper.
 
 After each successful `novel_chapter` run, `.mp/last_timeline_manifest.json` is written automatically.
 
@@ -15,10 +16,11 @@ You can also build a manifest by hand:
   {
     "merged_wav": "/abs/path/to/novel_merged_xxx.wav",
     "segment_durations": [1.2, 2.0, ...],
-    "image_paths": ["/abs/path/to/seg1.jpg", ...]
+    "image_paths": ["/abs/path/to/seg1.jpg", ...],
+    "subtitle_segment_texts": ["第一段旁白", "第二段旁白"]
   }
 
-If `segment_durations` is omitted, provide `segment_wavs` (same list) — durations are measured with ffprobe/MoviePy.
+Optional `subtitle_segment_texts` (same length as images) skips Whisper and burns those lines on the matching segment windows. If `segment_durations` is omitted, provide `segment_wavs` (same list) — durations are measured with ffprobe/MoviePy.
 """
 from __future__ import annotations
 
@@ -113,7 +115,16 @@ def main() -> int:
     )
 
     pipeline = ShortVideoPipeline(ScriptApiProvider(), ImageApiProvider())
-    video_path, subtitle_path = pipeline.combine_timeline(image_paths, durations, merged_wav)
+    sub_texts = data.get("subtitle_segment_texts")
+    if isinstance(sub_texts, list) and len(sub_texts) == len(image_paths):
+        video_path, subtitle_path = pipeline.combine_timeline(
+            image_paths,
+            durations,
+            merged_wav,
+            subtitle_segment_texts=[str(x) for x in sub_texts],
+        )
+    else:
+        video_path, subtitle_path = pipeline.combine_timeline(image_paths, durations, merged_wav)
 
     success(f"Wrote video: {video_path}")
     if subtitle_path:

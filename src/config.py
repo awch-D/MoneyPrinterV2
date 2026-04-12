@@ -367,16 +367,16 @@ def get_video_ken_burns_enabled() -> bool:
 
 
 def get_video_ken_burns_zoom_min() -> float:
-    return max(1.0, float(_read_config().get("video_ken_burns_zoom_min", 1.05)))
+    return max(1.0, float(_read_config().get("video_ken_burns_zoom_min", 1.03)))
 
 
 def get_video_ken_burns_zoom_max() -> float:
-    return max(1.0, float(_read_config().get("video_ken_burns_zoom_max", 1.10)))
+    return max(1.0, float(_read_config().get("video_ken_burns_zoom_max", 1.07)))
 
 
 def get_video_ken_burns_pan_extent() -> float:
     """Fraction of max horizontal pan (0 = zoom only, 1 = full overscan pan)."""
-    v = float(_read_config().get("video_ken_burns_pan_extent", 0.35))
+    v = float(_read_config().get("video_ken_burns_pan_extent", 0.0))
     return max(0.0, min(1.0, v))
 
 
@@ -413,6 +413,12 @@ def get_video_transition_random_seed() -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def get_audio_merge_crossfade_ms() -> float:
+    """Linear crossfade between novel segment WAVs when merging (0 = off). Caps at 80 ms."""
+    v = float(_read_config().get("audio_merge_crossfade_ms", 15.0))
+    return max(0.0, min(80.0, v))
 
 
 def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:

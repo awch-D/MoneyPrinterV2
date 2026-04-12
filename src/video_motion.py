@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import os
 import random
 from typing import Any
 
@@ -145,92 +144,6 @@ def ken_burns_pan_zoom_clip(
         else:
             yi = 0
         return (xi, yi)
-
-    # #region agent log
-    import json
-    import time as _agent_time
-
-    _agent_log_path = "/Users/arno/Documents/project/.cursor/debug-5d2a66.log"
-
-    def _agent_log(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-        with open(_agent_log_path, "a", encoding="utf-8") as _af:
-            _af.write(
-                json.dumps(
-                    {
-                        "sessionId": "5d2a66",
-                        "hypothesisId": hypothesis_id,
-                        "location": location,
-                        "message": message,
-                        "data": data,
-                        "timestamp": int(_agent_time.time() * 1000),
-                        "runId": "pre-fix",
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-
-    _img_tag = os.path.basename(image_path)
-    for _label, _t in (
-        ("t0", 0.0),
-        ("t_mid", duration * 0.5),
-        ("t_end", max(0.0, duration - 1e-4)),
-    ):
-        xi_s, yi_s = pos_t(_t)
-        u_s = min(1.0, max(0.0, _t / duration)) if duration > 1e-6 else 0.0
-        z_s = zoom_factor(_t)
-        w_f_s = float(bw) * z_s
-        h_f_s = float(bh) * z_s
-        w_s = int(bw * z_s)
-        h_s = int(bh * z_s)
-        tmx_s = max(0, w_s - out_w)
-        u_ease_s = u_s * u_s * (3.0 - 2.0 * u_s)
-        move_x_s = _pan_move_x_from_wf(w_f_s)
-        xf_s = -u_ease_s * move_x_s
-        yf_s = (out_h - h_f_s) / 2.0
-        right_s = xi_s + w_s
-        bottom_s = yi_s + h_s
-        _agent_log(
-            "H1-H5",
-            "video_motion.ken_burns_pan_zoom_clip:pos_sample",
-            _label,
-            {
-                "image": _img_tag,
-                "duration": round(duration, 4),
-                "bw": bw,
-                "bh": bh,
-                "z0": z0,
-                "z1": z1,
-                "sample_t": _t,
-                "u": u_s,
-                "z": z_s,
-                "w": w_s,
-                "h": h_s,
-                "out_w": out_w,
-                "out_h": out_h,
-                "total_move_x": tmx_s,
-                "pan_extent": pe,
-                "pan_max_width_ratio": pmr,
-                "pan_cap_px": _pan_cap_px if _use_pan_cap else None,
-                "pan_move_x": move_x_s,
-                "x_f": xf_s,
-                "y_f": yf_s,
-                "x_i": xi_s,
-                "y_i": yi_s,
-                "right_edge": right_s,
-                "bottom_edge": bottom_s,
-                "gap_right_px": out_w - right_s,
-                "gap_left_px": xi_s,
-                "gap_bottom_px": out_h - bottom_s,
-                "gap_top_px": yi_s,
-                "H1_w_lt_out_w": w_s < out_w,
-                "H2_x_positive_gap_left": xi_s > 0,
-                "H3_right_lt_out_w_black_right": right_s < out_w,
-                "H4_vertical_gap": yi_s > 0 or bottom_s < out_h,
-                "H5_negative_move_x_positive_xf": tmx_s < 0 and xf_s > 1e-6,
-            },
-        )
-    # #endregion
 
     comp = CompositeVideoClip([clip.with_position(pos_t)], size=(out_w, out_h))
     comp = comp.with_duration(duration).with_fps(fps)

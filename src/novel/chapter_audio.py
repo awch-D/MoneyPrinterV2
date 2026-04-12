@@ -8,7 +8,7 @@ from moviepy import AudioFileClip
 
 from audio_merge import merge_wav_files
 from classes.Tts import TTS
-from config import ROOT_DIR
+from config import ROOT_DIR, get_audio_merge_crossfade_ms
 
 
 def clean_narration_for_tts(text: str) -> str:
@@ -48,5 +48,5 @@ def synthesize_segments_to_merged_wav(
             clip.close()
 
     merged_path = os.path.join(base, f"novel_merged_{uuid4()}.wav")
-    merge_wav_files(segment_paths, merged_path)
+    merge_wav_files(segment_paths, merged_path, crossfade_ms=get_audio_merge_crossfade_ms())
     return segment_paths, durations, merged_path

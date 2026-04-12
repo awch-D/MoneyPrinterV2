@@ -18,8 +18,9 @@ python src/main.py --capability novel_chapter --chapter-file path/to/chapter.txt
 
 1. **Chapter analysis** (`src/novel/chapter_analyzer.py`): OpenAI-compatible `script_api_*` returns JSON with `style_bible`, `characters[]` (stable `look` strings), and `segments[]` (`narration`, `scene_summary`, `image_prompt`, `visible_character_ids`).
 2. **Consistency**: Each image request prepends the style bible and visible characters’ looks to the segment `image_prompt` (`build_merged_image_prompt`), then appends optional `novel_chapter_image_prompt_suffix`, then the optional **global画风** from `image_prompt_style` / `image_prompt_style_preset` (see `Configuration.md`).
-3. **Audio timeline** (`src/novel/chapter_audio.py`): Each `narration` is synthesized to its own WAV; durations are measured; files are merged in order for one full narration track used by Whisper/AssemblyAI.
-4. **Video** (`ShortVideoPipeline.combine_timeline`): One still per segment, `duration ==` that segment’s TTS length; then existing subtitle burn-in and BGM mix.
+3. **Audio timeline** (`src/novel/chapter_audio.py`): Each `narration` is synthesized to its own WAV; durations are measured; files are merged in order with an optional short **crossfade** (`audio_merge_crossfade_ms` in `config.json`, default 15 ms) to soften segment seams. Final video timing is aligned to the merged WAV length.
+4. **Video** (`ShortVideoPipeline.combine_timeline`): One still per segment, `duration ==` that segment’s TTS length (scaled if needed to match the merged WAV). **Subtitles** are built from the **same cleaned text as TTS** (`clean_narration_for_tts`) and **per-segment durations** (after alignment)—one SRT cue per segment—so burned-in text matches what was spoken without running Whisper on the narration. Other flows that call `combine_timeline` without `subtitle_segment_texts` still use Whisper/AssemblyAI on the WAV.
+5. **Manifest** (`.mp/last_timeline_manifest.json`): Includes `subtitle_segment_texts` so `scripts/recombine_timeline.py` can re-encode with the same script-aligned subtitles.
 
 ## Configuration
 

@@ -57,6 +57,7 @@ from config import (
     whisper_cli_uses_fp16,
 )
 from novel.image_style_presets import append_global_style_to_image_prompt
+from novel.timeline_script_srt import write_timeline_script_subtitles_srt
 from providers.image_api_provider import ImageApiProvider
 from providers.script_api_provider import ScriptApiProvider
 from status import info, success, warning
@@ -396,6 +397,9 @@ class ShortVideoPipeline:
         video_clip: Any,
         tts_path: str,
         output_path: str,
+        *,
+        prebuilt_subtitle_path: str | None = None,
+        subtitle_equalize_max_chars: int = 10,
     ) -> str | None:
         """Attach narration + optional BGM, burn subtitles, write MP4. Closes tts_clip after write."""
         threads = get_threads()
@@ -408,8 +412,11 @@ class ShortVideoPipeline:
         subtitle_path: str | None = None
         subtitles = None
         try:
-            subtitle_path = self.generate_subtitles(tts_path)
-            equalize_subtitles(subtitle_path, 10)
+            if prebuilt_subtitle_path and os.path.isfile(prebuilt_subtitle_path):
+                subtitle_path = prebuilt_subtitle_path
+            else:
+                subtitle_path = self.generate_subtitles(tts_path)
+            equalize_subtitles(subtitle_path, subtitle_equalize_max_chars)
             subtitles = (
                 SubtitlesClip(subtitle_path, make_textclip=make_textclip)
                 .with_position(("center", subtitle_y))
@@ -487,10 +494,16 @@ class ShortVideoPipeline:
         image_paths: list[str],
         segment_durations: list[float],
         narration_wav_path: str,
+        *,
+        subtitle_segment_texts: list[str] | None = None,
     ) -> tuple[str, str | None]:
         """
         One still per segment; each clip lasts exactly the matching segment duration.
         Narration WAV must span the same total time (concatenated segment TTS).
+
+        If ``subtitle_segment_texts`` is set (same length as segments), subtitles are generated from that
+        script timed to ``aligned`` segment durations instead of Whisper/AssemblyAI on the WAV
+        (avoids ASR mismatches vs the narration you actually synthesized).
         """
         if len(image_paths) != len(segment_durations):
             raise ValueError(
@@ -515,8 +528,29 @@ class ShortVideoPipeline:
         if get_verbose():
             info("[+] Combining image clips (per-segment timeline)...")
 
+        prebuilt_srt: str | None = None
+        eq_chars = 10
+        if subtitle_segment_texts is not None:
+            if len(subtitle_segment_texts) != len(aligned_durations):
+                raise ValueError(
+                    "combine_timeline: len(subtitle_segment_texts) must match segments "
+                    f"({len(subtitle_segment_texts)} vs {len(aligned_durations)})"
+                )
+            prebuilt_srt = write_timeline_script_subtitles_srt(
+                subtitle_segment_texts, aligned_durations
+            )
+            eq_chars = 40
+            if get_verbose():
+                info("Subtitles: using script-aligned timeline (not Whisper on narration WAV).")
+
         final_clip = self._compose_still_sequence(image_paths, aligned_durations, out_w, out_h)
-        subtitle_path = self._finalize_with_subtitles_and_bgm(final_clip, narration_wav_path, output_path)
+        subtitle_path = self._finalize_with_subtitles_and_bgm(
+            final_clip,
+            narration_wav_path,
+            output_path,
+            prebuilt_subtitle_path=prebuilt_srt,
+            subtitle_equalize_max_chars=eq_chars,
+        )
         return output_path, subtitle_path
 
     def run(
