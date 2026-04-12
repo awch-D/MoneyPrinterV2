@@ -40,6 +40,8 @@ from config import (
     get_verbose,
     get_video_fps,
     get_video_ken_burns_enabled,
+    get_video_ken_burns_pan_extent,
+    get_video_ken_burns_pan_max_width_ratio,
     get_video_ken_burns_zoom_max,
     get_video_ken_burns_zoom_min,
     get_video_output_size,
@@ -381,6 +383,8 @@ class ShortVideoPipeline:
             ken_burns=get_video_ken_burns_enabled(),
             zoom_min=get_video_ken_burns_zoom_min(),
             zoom_max=get_video_ken_burns_zoom_max(),
+            pan_extent=get_video_ken_burns_pan_extent(),
+            pan_max_width_ratio=get_video_ken_burns_pan_max_width_ratio(),
             transition_mode=get_video_transition(),
             page_flip_probability=get_video_page_flip_probability(),
             page_flip_duration_seconds=get_video_page_flip_duration_seconds(),
@@ -435,14 +439,17 @@ class ShortVideoPipeline:
         # MP4: H.264 + AAC + yuv420p + faststart = standard single-file deliverable (not MP3-in-MP4).
         ext = os.path.splitext(output_path)[1].lower()
         if ext == ".mp4":
+            # libx264 without CRF/bitrate can yield very low average bitrate on some runs
+            # (tiny MP4 + blocky video). CRF gives stable visual quality across machines.
             final_clip.write_videofile(
                 output_path,
                 threads=threads,
                 codec="libx264",
                 audio_codec="aac",
+                audio_bitrate="192k",
                 preset="medium",
                 pixel_format="yuv420p",
-                ffmpeg_params=["-movflags", "+faststart"],
+                ffmpeg_params=["-crf", "20", "-movflags", "+faststart"],
             )
         else:
             final_clip.write_videofile(output_path, threads=threads)

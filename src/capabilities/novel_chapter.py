@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -11,7 +12,7 @@ from novel.chapter_audio import synthesize_segments_to_merged_wav
 from pipeline.short_video_pipeline import ShortVideoPipeline, VideoBuildResult
 from providers.image_api_provider import ImageApiProvider
 from providers.script_api_provider import ScriptApiProvider
-from status import info, success
+from status import info, success, warning
 
 
 class NovelChapterCapability:
@@ -58,6 +59,29 @@ class NovelChapterCapability:
                 "every segment uses the same configured voice / reference."
             )
         _seg_wavs, durations, merged_wav = synthesize_segments_to_merged_wav(narrations, tts_engine)
+
+        manifest_path = os.path.join(ROOT_DIR, ".mp", "last_timeline_manifest.json")
+        try:
+            os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
+            with open(manifest_path, "w", encoding="utf-8") as mf:
+                json.dump(
+                    {
+                        "topic": topic_label,
+                        "chapter_file": os.path.abspath(chapter_path),
+                        "merged_wav": os.path.abspath(merged_wav),
+                        "segment_durations": [float(x) for x in durations],
+                        "segment_wavs": [os.path.abspath(p) for p in _seg_wavs],
+                        "image_paths": [os.path.abspath(p) for p in image_paths],
+                    },
+                    mf,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            if get_verbose():
+                info(f"Timeline manifest for recombine: {manifest_path}")
+        except OSError as exc:
+            if get_verbose():
+                warning(f"Could not write timeline manifest: {exc}")
 
         if get_verbose():
             info("Composing timeline video (per-segment durations)...")

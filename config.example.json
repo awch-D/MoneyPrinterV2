@@ -17,6 +17,8 @@
   "video_ken_burns_enabled": true,
   "video_ken_burns_zoom_min": 1.05,
   "video_ken_burns_zoom_max": 1.1,
+  "video_ken_burns_pan_extent": 0.35,
+  "video_ken_burns_pan_max_width_ratio": 0.05,
   "video_transition": "random_page_flip",
   "video_page_flip_probability": 0.35,
   "video_page_flip_duration_seconds": 0.38,

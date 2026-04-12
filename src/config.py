@@ -7,7 +7,11 @@ from typing import Any
 import srt_equalizer
 from termcolor import colored
 
-ROOT_DIR = os.path.dirname(sys.path[0])
+# Project root (MoneyPrinterV2/), not derived from sys.path[0] — that can be the script dir
+# when ``src`` is already on PYTHONPATH and we skip inserting it at position 0, which breaks
+# ``config.json`` resolution and all ``.mp`` paths.
+_SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(_SRC_DIR)
 
 _RUNTIME_OVERRIDE_STACK: list[dict[str, Any]] = []
 
@@ -368,6 +372,18 @@ def get_video_ken_burns_zoom_min() -> float:
 
 def get_video_ken_burns_zoom_max() -> float:
     return max(1.0, float(_read_config().get("video_ken_burns_zoom_max", 1.10)))
+
+
+def get_video_ken_burns_pan_extent() -> float:
+    """Fraction of max horizontal pan (0 = zoom only, 1 = full overscan pan)."""
+    v = float(_read_config().get("video_ken_burns_pan_extent", 0.35))
+    return max(0.0, min(1.0, v))
+
+
+def get_video_ken_burns_pan_max_width_ratio() -> float:
+    """Cap pan travel at this fraction of output width (0 = no cap, only ``pan_extent`` applies)."""
+    v = float(_read_config().get("video_ken_burns_pan_max_width_ratio", 0.05))
+    return max(0.0, min(0.35, v))
 
 
 def get_video_transition() -> str:
