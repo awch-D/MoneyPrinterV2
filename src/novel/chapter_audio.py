@@ -50,3 +50,26 @@ def synthesize_segments_to_merged_wav(
     merged_path = os.path.join(base, f"novel_merged_{uuid4()}.wav")
     merge_wav_files(segment_paths, merged_path, crossfade_ms=get_audio_merge_crossfade_ms())
     return segment_paths, durations, merged_path
+
+
+def synthesize_full_track_to_wav(
+    subtitle_lines: list[str],
+    tts: TTS,
+    *,
+    work_dir: str | None = None,
+) -> str:
+    """
+    One TTS pass on ``"".join(subtitle_lines)`` (no delimiter). Each line must be non-empty.
+
+    ``subtitle_lines`` must match the same cleaning used for per-segment mode (e.g. from
+    ``clean_narration_for_tts`` per narration).
+    """
+    base = work_dir or os.path.join(ROOT_DIR, ".mp")
+    os.makedirs(base, exist_ok=True)
+    lines = [s.strip() for s in subtitle_lines]
+    if any(not s for s in lines):
+        raise RuntimeError("Empty segment in subtitle_lines; cannot synthesize full track")
+    full_text = "".join(lines)
+    out_path = os.path.join(base, f"novel_full_{uuid4()}.wav")
+    tts.synthesize(full_text, out_path)
+    return out_path

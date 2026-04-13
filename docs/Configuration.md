@@ -37,6 +37,10 @@ For how to run the CLI (short vs novel chapter, orientation, examples), see [Usa
 - `video_page_flip_duration_seconds`: `number` - Length of each page-flip clip; adjacent segments are each shortened by half of this so total duration matches audio (default `0.38`).
 - `video_transition_random_seed`: `number` | `null` - Fix random flips for reproducibility; `null` = nondeterministic.
 - `audio_merge_crossfade_ms`: `number` - When merging per-segment novel chapter WAVs, linear crossfade length in milliseconds at each join (default `15`, max `80`; set `0` to disable). Shortens the merged file slightly; `combine_timeline` scales segment lengths to the merged WAV.
+- `video_ken_burns_dynamic_zoom`: `boolean` - When `false` (default), Ken Burns uses **fixed** zoom (`zoom_max` is ignored for motion; only `zoom_min` applies) and **pan** only (`video_ken_burns_pan_extent`), reducing time-varying resize jitter.
+- `novel_audio_pipeline`: `string` - `segment_merge` (default) or `full_track_whisperx` (one-shot TTS + WhisperX alignment; see `docs/NovelChapter.md`).
+- `whisperx_device`: `string` - e.g. `cuda` or `cpu` for WhisperX alignment.
+- `whisperx_language_code`: `string` - Passed to `whisperx.load_align_model` (e.g. `zh`, `en`).
 - `novel_chapter_image_prompt_suffix`: `string` - Appended to every **merged** novel-chapter image prompt after `style_bible`, character looks, scene context, and segment `image_prompt` (before the global `image_prompt_style` / preset). Use for a shared “avoid / negative” line in natural language. Empty string disables.
 - `threads`: `number` - The amount of threads that will be used to execute operations, e.g. writing to a file using MoviePy.
 - `is_for_kids`: `boolean` - If `true`, the application will upload the video to YouTube Shorts as a video for kids.

@@ -6,9 +6,22 @@ import sys
 
 from classes.Tts import TTS
 from capabilities.base import RunContext
-from config import ROOT_DIR, get_qwen3_tts_reference_audio, get_tts_backend, get_verbose
+from config import (
+    ROOT_DIR,
+    get_novel_audio_pipeline,
+    get_qwen3_tts_reference_audio,
+    get_tts_backend,
+    get_verbose,
+    get_whisperx_device,
+    get_whisperx_language_code,
+)
 from novel.chapter_analyzer import analyze_chapter, build_merged_image_prompt
-from novel.chapter_audio import clean_narration_for_tts, synthesize_segments_to_merged_wav
+from novel.chapter_audio import (
+    clean_narration_for_tts,
+    synthesize_full_track_to_wav,
+    synthesize_segments_to_merged_wav,
+)
+from novel.whisperx_segment_align import segment_durations_via_whisperx_align
 from pipeline.short_video_pipeline import ShortVideoPipeline, VideoBuildResult
 from providers.image_api_provider import ImageApiProvider
 from providers.script_api_provider import ScriptApiProvider
@@ -50,8 +63,12 @@ class NovelChapterCapability:
             sys.stdout.flush()
 
         narrations = [s.narration for s in plan.segments]
+        subtitle_lines = [clean_narration_for_tts(t).strip() for t in narrations]
+        if any(not line for line in subtitle_lines):
+            raise RuntimeError("One or more segments have empty narration after cleaning")
+
         if get_verbose():
-            info("Synthesizing per-segment TTS and merging audio...")
+            info("Synthesizing speech (novel chapter)…")
         tts_engine = TTS()
         if get_verbose():
             info(
@@ -66,8 +83,26 @@ class NovelChapterCapability:
                     "qwen3_tts_reference_audio 未配置或不是有效文件时，分段 TTS 音色容易飘；"
                     "建议在 config.json 设置参考干声以稳定音色。"
                 )
-        _seg_wavs, durations, merged_wav = synthesize_segments_to_merged_wav(narrations, tts_engine)
-        subtitle_lines = [clean_narration_for_tts(t).strip() for t in narrations]
+
+        audio_mode = get_novel_audio_pipeline()
+        if audio_mode == "full_track_whisperx":
+            if get_verbose():
+                info(
+                    "Novel audio: full_track_whisperx — single TTS pass + WhisperX forced alignment "
+                    f"(device={get_whisperx_device()!r}, lang={get_whisperx_language_code()!r})"
+                )
+            merged_wav = synthesize_full_track_to_wav(subtitle_lines, tts_engine)
+            _seg_wavs = [merged_wav]
+            durations = segment_durations_via_whisperx_align(
+                merged_wav,
+                subtitle_lines,
+                device=get_whisperx_device(),
+                language_code=get_whisperx_language_code(),
+            )
+        else:
+            if get_verbose():
+                info("Novel audio: segment_merge — per-segment TTS + WAV merge")
+            _seg_wavs, durations, merged_wav = synthesize_segments_to_merged_wav(narrations, tts_engine)
 
         manifest_path = os.path.join(ROOT_DIR, ".mp", "last_timeline_manifest.json")
         try:
@@ -82,6 +117,7 @@ class NovelChapterCapability:
                         "segment_wavs": [os.path.abspath(p) for p in _seg_wavs],
                         "image_paths": [os.path.abspath(p) for p in image_paths],
                         "subtitle_segment_texts": subtitle_lines,
+                        "novel_audio_pipeline": audio_mode,
                     },
                     mf,
                     ensure_ascii=False,

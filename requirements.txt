@@ -9,3 +9,5 @@ Pillow>=10.0.0
 assemblyai
 srt_equalizer
 json-repair>=0.30.0
+# Optional: novel_audio_pipeline=full_track_whisperx (forced alignment for one-shot TTS)
+# whisperx

@@ -374,6 +374,11 @@ def get_video_ken_burns_zoom_max() -> float:
     return max(1.0, float(_read_config().get("video_ken_burns_zoom_max", 1.07)))
 
 
+def get_video_ken_burns_dynamic_zoom() -> bool:
+    """When False, Ken Burns uses fixed zoom (zoom_max clamped to zoom_min) and only pan moves."""
+    return bool(_read_config().get("video_ken_burns_dynamic_zoom", False))
+
+
 def get_video_ken_burns_pan_extent() -> float:
     """Fraction of max horizontal pan (0 = zoom only, 1 = full overscan pan)."""
     v = float(_read_config().get("video_ken_burns_pan_extent", 0.0))
@@ -419,6 +424,28 @@ def get_audio_merge_crossfade_ms() -> float:
     """Linear crossfade between novel segment WAVs when merging (0 = off). Caps at 80 ms."""
     v = float(_read_config().get("audio_merge_crossfade_ms", 15.0))
     return max(0.0, min(80.0, v))
+
+
+def get_novel_audio_pipeline() -> str:
+    """
+    ``segment_merge`` (default): per-segment TTS WAVs then merge (with optional crossfade).
+
+    ``full_track_whisperx``: one TTS call on concatenated cleaned text, then WhisperX forced
+    alignment for per-segment durations (stable timbre; requires ``pip install whisperx``).
+    """
+    raw = str(_read_config().get("novel_audio_pipeline", "segment_merge")).strip().lower()
+    if raw in ("full_track_whisperx", "whisperx", "full_track"):
+        return "full_track_whisperx"
+    return "segment_merge"
+
+
+def get_whisperx_device() -> str:
+    return str(_read_config().get("whisperx_device", "cpu")).strip() or "cpu"
+
+
+def get_whisperx_language_code() -> str:
+    """BCP-47 style short code for ``whisperx.load_align_model`` (e.g. ``zh``, ``en``)."""
+    return str(_read_config().get("whisperx_language_code", "zh")).strip() or "zh"
 
 
 def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:

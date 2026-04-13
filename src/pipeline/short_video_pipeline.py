@@ -39,6 +39,7 @@ from config import (
     get_threads,
     get_verbose,
     get_video_fps,
+    get_video_ken_burns_dynamic_zoom,
     get_video_ken_burns_enabled,
     get_video_ken_burns_pan_extent,
     get_video_ken_burns_pan_max_width_ratio,
@@ -375,6 +376,8 @@ class ShortVideoPipeline:
     ) -> Any:
         """Ken Burns + optional page-flip transitions; durations must match narration timeline."""
         fps = get_video_fps()
+        zmin = get_video_ken_burns_zoom_min()
+        zmax = get_video_ken_burns_zoom_max() if get_video_ken_burns_dynamic_zoom() else zmin
         return build_visual_timeline_clips(
             image_paths,
             [float(d) for d in segment_durations],
@@ -382,8 +385,8 @@ class ShortVideoPipeline:
             out_h,
             fps=fps,
             ken_burns=get_video_ken_burns_enabled(),
-            zoom_min=get_video_ken_burns_zoom_min(),
-            zoom_max=get_video_ken_burns_zoom_max(),
+            zoom_min=zmin,
+            zoom_max=zmax,
             pan_extent=get_video_ken_burns_pan_extent(),
             pan_max_width_ratio=get_video_ken_burns_pan_max_width_ratio(),
             transition_mode=get_video_transition(),
