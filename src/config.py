@@ -72,8 +72,34 @@ def get_qwen3_tts_url() -> str:
     return str(_read_config().get("qwen3_tts_url", "http://127.0.0.1:7862")).rstrip("/")
 
 
+def get_qwen3_tts_http_timeout_seconds() -> float | None:
+    """Optional ``httpx`` limits for ``gradio_client`` (see ``Tts._qwen3_client_singleton``).
+
+    If **unset** or ``null``: do not override Gradio defaults (best for SSE streaming).
+
+    If **set** to a positive number: use ``write=that value`` with ``read=None`` so long GPU
+    silences during ``/do_job`` do not trip **read** timeouts (a plain ``Timeout(1200)``
+    caps *all* phases and can break or stall Gradio event streams).
+
+    ``0`` or negative: same as unset (no custom ``httpx_kwargs``).
+    """
+    raw = _read_config().get("qwen3_tts_http_timeout_seconds")
+    if raw is None:
+        return None
+    try:
+        v = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if v <= 0:
+        return None
+    return max(30.0, v)
+
+
 def get_qwen3_tts_api_name() -> str:
-    """`/do_job_t` (text+instruct), `/do_job` (dropdown+ref audio), or `auto` (pick by reference_audio)."""
+    """`/do_job_t` (text+instruct), `/do_job` (dropdown+ref audio), or `auto` (pick by reference_audio).
+
+    Explicit `/do_job` requires `qwen3_tts_reference_audio` to exist or TTS raises RuntimeError.
+    """
     return str(_read_config().get("qwen3_tts_api_name", "/do_job_t")).strip() or "/do_job_t"
 
 
@@ -87,7 +113,7 @@ def get_qwen3_tts_voices_dropdown() -> str:
 
 
 def get_qwen3_tts_prompt_text() -> str:
-    """Extra prompt for `/do_job`; empty means use qwen3_tts_instruct."""
+    """Transcript of reference audio for `/do_job` (should match prompt_audio content). Empty falls back to instruct (often poor for clone quality)."""
     return str(_read_config().get("qwen3_tts_prompt_text", "")).strip()
 
 

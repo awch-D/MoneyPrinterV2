@@ -24,7 +24,7 @@
 - **ImageMagick**：烧录字幕需要，`config.json` 中配置 `imagemagick_path`（macOS 常见为 `/opt/homebrew/bin/magick`）
 - **脚本大模型**：OpenAI 兼容的 `/v1/chat/completions`（话题文案、小说分镜 JSON 等）
 - **文生图**：OpenAI 兼容的 `/v1/images/generations`（Gemini 代理等），见下文
-- **TTS**：`kitten` 本地或 `qwen3` Gradio 等，见 [Configuration.md](./Configuration.md)
+- **TTS**：`kitten` 本地或 `qwen3` Gradio（`/do_job_t` 与 `/do_job` 等），见 [Configuration.md](./Configuration.md#tts-kitten-与-qwen3-gradio)
 - **字幕**：默认本地 OpenAI **`whisper` 命令行**（需系统已安装，如 `brew install openai-whisper`），或 AssemblyAI
 
 可选自检：

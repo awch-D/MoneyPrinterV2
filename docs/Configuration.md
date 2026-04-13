@@ -65,7 +65,30 @@ For how to run the CLI (short vs novel chapter, orientation, examples), see [Usa
 - `whisper_device`: `string` - Maps to `whisper --device` when not `auto` (`cpu`, `cuda`, etc.).
 - `whisper_compute_type`: `string` - Maps to `whisper --fp16`: `int8` / `int8_*` → `--fp16 False`, otherwise `--fp16 True`.
 - `assembly_ai_api_key`: `string` - Your Assembly AI API key. Get yours from [here](https://www.assemblyai.com/app/).
-- `tts_voice`: `string` - Voice for KittenTTS text-to-speech. Default is `Jasper`. Options: `Bella`, `Jasper`, `Luna`, `Bruno`, `Rosie`, `Hugo`, `Kiki`, `Leo`.
+
+### TTS (Kitten 与 Qwen3 Gradio)
+
+- `tts_backend`: `string` - `kitten` (default, local KittenTTS) or `qwen3` / `qwen3_gradio` / `qwen3_http` (aliases) to call a local [Gradio](https://www.gradio.app/) qwen3-tts style app over HTTP (`gradio_client`).
+- `qwen3_tts_url`: `string` - Base URL of the Gradio server (default `http://127.0.0.1:7862`, no trailing slash required).
+- `qwen3_tts_http_timeout_seconds`: `number` | `null` - Optional `httpx` tuning for `gradio_client`. **`null` or omit (recommended)** — use Gradio defaults (safest for SSE). If set to a **positive** number, MoneyPrinterV2 passes `httpx.Timeout(connect=30, read=None, write=<value>, pool=120)` so long GPU silences during `/do_job` do not hit a **read** cap (a plain `Timeout(1200)` on all phases can break streaming and look like “TTS 没反应”). `0` or negative: same as omit. For debugging endpoints, run `python scripts/dump_qwen3_gradio_api.py`.
+- `qwen3_tts_api_name`: `string` - Which named API to call:
+  - **`/do_job_t`** — `predict(text, instruct, chunk_size)`. Does **not** send reference audio or the voices dropdown; only `qwen3_tts_instruct` and `qwen3_tts_gradio_chunk_size` matter among the qwen3-specific knobs.
+  - **`/do_job`** — `predict(voices_dropdown, text, prompt_text, prompt_audio, speed, chunk_size, batch, lang, model_type)`. **Requires** `qwen3_tts_reference_audio` to be a path to an existing file on this machine (passed as `prompt_audio`). If you set `/do_job` but the file is missing, the app raises `RuntimeError` (no silent fallback to `/do_job_t`).
+  - **`auto`** — Uses `/do_job` when `qwen3_tts_reference_audio` exists, otherwise `/do_job_t`.
+- `qwen3_tts_reference_audio`: `string` - Absolute path to reference WAV/MP3 for `/do_job` / `auto` (when you want `/do_job`). Use a short, clean clip that matches the target timbre. For novel chapter segment TTS, an unset or invalid path makes timbre drift more likely when using `/do_job_t`.
+- `qwen3_tts_voices_dropdown`: `string` - Must match a **literal** option from the Gradio **音色** dropdown (run `Client(url).view_api()` or open the app’s API page to list values). Examples often include `老男人`, `使用参考音频`, `Keira`, etc. Only used for `/do_job`. When anchoring timbre from `qwen3_tts_reference_audio`, use **`使用参考音频`** (or the option your app uses for “custom reference”) so the server applies your file.
+- `qwen3_tts_prompt_text`: `string` - For **`/do_job`**, this should be the **verbatim transcript of what is spoken in `qwen3_tts_reference_audio`** (same wording as in the clip), not a style tagline. If empty, the code falls back to `qwen3_tts_instruct`, which often **breaks** reference cloning and sounds like gibberish. Use the qwen3-tts UI or Gradio **`/prompt_wav_recognition`** (pass the reference file) to obtain text, paste it here, and edit if the ASR is wrong.
+- `qwen3_tts_speed`, `qwen3_tts_batch`, `qwen3_tts_lang`, `qwen3_tts_model_type`: passed to `/do_job` only (`model_type`: `0.6B` or `1.7B`). The client wraps the reference path with `gradio_client.handle_file` for `/do_job` (raw paths often make the upstream app error). `batch` is sent as an **integer** (some qwen3-tts builds reject `8.0`).
+- `qwen3_tts_instruct`: style / instruction text (`/do_job_t` and as default `prompt_text` for `/do_job`).
+- `qwen3_tts_max_chunk_chars`: max characters per chunk before splitting text for repeated `predict` calls.
+- `qwen3_tts_gradio_chunk_size`: third slider argument (chunk size) for both `/do_job_t` and `/do_job`.
+- `qwen3_tts_static_args` / `qwen3_tts_predict_arg_order`: only used if you point `qwen3_tts_api_name` at a **custom** Gradio endpoint (not `/do_job` or `/do_job_t`).
+
+**`config.json` fragment for Qwen3 + `/do_job`:** set `tts_backend` to `qwen3`, `qwen3_tts_api_name` to `/do_job` or `auto`, and set `qwen3_tts_reference_audio` to a real file path before running.
+
+Optional integration check (local Gradio must be running): `QWEN3_SMOKE=1 .venv/bin/python -m unittest tests.test_tts_qwen3_resolve.Qwen3LiveSmokeTests` — uses a tiny silent WAV; the server may skip or fail if it rejects short clips; use a real reference file for a meaningful end-to-end check.
+
+- `tts_voice`: `string` - Voice for **KittenTTS only** (when `tts_backend` is `kitten`). Default is `Jasper`. Options: `Bella`, `Jasper`, `Luna`, `Bruno`, `Rosie`, `Hugo`, `Kiki`, `Leo`.
 - `font`: `string` - The font that will be used to generate images. This should be a `.ttf` file in the `fonts/` directory.
 - `imagemagick_path`: `string` - The path to the ImageMagick binary. This is used by MoviePy to manipulate images. Install ImageMagick from [here](https://imagemagick.org/script/download.php) and set the path to the `magick.exe` on Windows, or on Linux/MacOS the path to `convert` (usually /usr/bin/convert).
 - `script_sentence_length`: `number` - The number of sentences in the generated video script (default: `4`).

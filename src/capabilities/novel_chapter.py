@@ -82,6 +82,7 @@ class NovelChapterCapability:
                 warning(
                     "qwen3_tts_reference_audio 未配置或不是有效文件时，分段 TTS 音色容易飘；"
                     "建议在 config.json 设置参考干声以稳定音色。"
+                    "若 qwen3_tts_api_name 为 /do_job，缺少有效参考文件会在合成前直接报错。"
                 )
 
         audio_mode = get_novel_audio_pipeline()

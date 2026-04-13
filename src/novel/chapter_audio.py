@@ -71,5 +71,6 @@ def synthesize_full_track_to_wav(
         raise RuntimeError("Empty segment in subtitle_lines; cannot synthesize full track")
     full_text = "".join(lines)
     out_path = os.path.join(base, f"novel_full_{uuid4()}.wav")
-    tts.synthesize(full_text, out_path)
+    # One Gradio /do_job (or /do_job_t) call for the whole chapter — no client-side sentence splitting.
+    tts.synthesize(full_text, out_path, qwen3_no_sentence_split=True)
     return out_path
