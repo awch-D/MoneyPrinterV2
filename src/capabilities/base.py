@@ -14,6 +14,8 @@ class RunContext:
     script_file: str | None
     chapter_file: str | None
     keep_temp: bool
+    reuse_images_manifest: bool = False
+    placeholder_images: bool = False
 
 
 class VideoCapability(Protocol):

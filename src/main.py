@@ -1,6 +1,10 @@
 import argparse
 import json
+import os
 import sys
+
+# 全局禁用代理 - 必须在所有其他导入之前
+import disable_proxy  # noqa: F401
 
 from art import print_banner
 from capabilities.base import RunContext
@@ -55,6 +59,16 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Do not clear existing temp files in .mp before generation.",
     )
+    parser.add_argument(
+        "--reuse-images-manifest",
+        action="store_true",
+        help="(novel_chapter) Skip image generation and reuse image_paths from .mp/last_timeline_manifest.json.",
+    )
+    parser.add_argument(
+        "--placeholder-images",
+        action="store_true",
+        help="(novel_chapter) Skip image generation and use placeholder images for every segment.",
+    )
     args = parser.parse_args()
 
     cap = args.capability.strip().lower()
@@ -87,6 +101,8 @@ def main() -> int:
         script_file=(args.script_file.strip() or None),
         chapter_file=(args.chapter_file.strip() or None),
         keep_temp=bool(args.keep_temp),
+        reuse_images_manifest=bool(args.reuse_images_manifest),
+        placeholder_images=bool(args.placeholder_images),
     )
 
     overrides = _orientation_config(args.orientation)
