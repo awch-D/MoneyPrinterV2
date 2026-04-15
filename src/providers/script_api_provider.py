@@ -16,7 +16,7 @@ from status import warning
 
 @dataclass
 class ScriptApiProvider:
-    timeout_seconds: int = 120
+    timeout_seconds: int = 300
     max_retries: int = 5
 
     def generate_text(self, prompt: str, *, json_object: bool = False) -> str:
@@ -45,13 +45,19 @@ class ScriptApiProvider:
         }
 
         last_exc: Exception | None = None
+        
+        # 创建session并跳过代理
+        session = requests.Session()
+        session.trust_env = False  # 跳过环境变量中的代理设置
+        
         for attempt in range(self.max_retries):
             try:
-                response = requests.post(
+                response = session.post(
                     url,
                     headers=headers,
                     json=payload,
                     timeout=self.timeout_seconds,
+                    proxies={"http": None, "https": None}  # 明确禁用代理
                 )
                 if json_object and response.status_code == 400:
                     try:
@@ -66,11 +72,12 @@ class ScriptApiProvider:
                     payload.pop("response_format", None)
                     payload["temperature"] = 0.7
                     json_object = False
-                    response = requests.post(
+                    response = session.post(
                         url,
                         headers=headers,
                         json=payload,
                         timeout=self.timeout_seconds,
+                        proxies={"http": None, "https": None}  # 明确禁用代理
                     )
                 response.raise_for_status()
                 data = response.json()

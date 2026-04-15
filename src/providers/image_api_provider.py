@@ -11,6 +11,7 @@ from config import (
     get_nanobanana2_aspect_ratio,
     get_nanobanana2_ignore_env_proxy,
     get_nanobanana2_image_max_retries,
+    get_nanobanana2_request_format,
     get_nanobanana2_image_timeout_seconds,
     get_nanobanana2_model,
 )
@@ -93,6 +94,21 @@ def _image_bytes_from_generation_response(
     raise RuntimeError(f"Image API response missing b64_json and url: {list(item.keys())}")
 
 
+def _image_bytes_from_gemini_response(body: dict) -> bytes:
+    candidates = body.get("candidates") or []
+    if not candidates:
+        raise RuntimeError(f"Gemini image API response missing candidates: {body}")
+    parts = ((candidates[0] or {}).get("content") or {}).get("parts") or []
+    for part in parts:
+        inline = part.get("inlineData") if isinstance(part, dict) else None
+        if not inline:
+            continue
+        raw = str(inline.get("data") or "").strip()
+        if raw:
+            return _decode_b64_json_field(raw)
+    raise RuntimeError("Gemini image API response missing inlineData.data")
+
+
 class ImageApiProvider:
     def __init__(self, timeout_seconds: int | None = None):
         self.timeout_seconds = (
@@ -108,14 +124,30 @@ class ImageApiProvider:
 
         raw_size = (aspect_ratio or "").strip() or get_nanobanana2_aspect_ratio()
         size = _normalize_image_size_parameter(raw_size)
-        endpoint = f"{get_nanobanana2_api_base_url()}/v1/images/generations"
-        payload = {
-            "model": get_nanobanana2_model(),
-            "prompt": prompt,
-            "n": 1,
-            "size": size,
-            "response_format": "b64_json",
-        }
+        model = get_nanobanana2_model()
+        request_format = get_nanobanana2_request_format()
+        base_url = get_nanobanana2_api_base_url()
+        if request_format == "gemini":
+            endpoint = f"{base_url}/v1beta/models/{model}:generateContent"
+            payload = {
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "responseModalities": ["TEXT", "IMAGE"],
+                    "imageConfig": {
+                        "aspectRatio": size,
+                        "novartResolution": "1k"
+                    },
+                },
+            }
+        else:
+            endpoint = f"{base_url}/v1/images/generations"
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "n": 1,
+                "size": size,
+                "response_format": "b64_json",
+            }
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
@@ -124,8 +156,8 @@ class ImageApiProvider:
         timeout = self.timeout_seconds
         max_retries = get_nanobanana2_image_max_retries()
         session = requests.Session()
-        if get_nanobanana2_ignore_env_proxy():
-            session.trust_env = False
+        session.trust_env = False  # 始终跳过环境代理
+        
         last_exc: Exception | None = None
 
         for attempt in range(max_retries):
@@ -135,9 +167,12 @@ class ImageApiProvider:
                     headers=headers,
                     json=payload,
                     timeout=timeout,
+                    proxies={"http": None, "https": None}  # 明确禁用代理
                 )
                 response.raise_for_status()
                 body = response.json()
+                if request_format == "gemini":
+                    return _image_bytes_from_gemini_response(body)
                 return _image_bytes_from_generation_response(body, session=session)
             except (Timeout, ConnectionError) as exc:
                 last_exc = exc

@@ -64,7 +64,7 @@ def get_tts_voice() -> str:
 
 
 def get_tts_backend() -> str:
-    """kitten = local KittenTTS; qwen3_http / qwen3_gradio = Gradio HTTP API (e.g. local qwen3-tts app)."""
+    """kitten = local KittenTTS; qwen3_http / qwen3_gradio = Gradio HTTP API (e.g. local qwen3-tts app); minimax = MiniMax TTS API."""
     return str(_read_config().get("tts_backend", "kitten")).strip().lower()
 
 
@@ -163,6 +163,66 @@ def get_qwen3_tts_predict_arg_order() -> list[str]:
 def get_qwen3_tts_app_dir() -> str:
     """Directory containing the packaged `qwen3-tts` binary (run it manually before pipeline)."""
     return str(_read_config().get("qwen3_tts_app_dir", "")).strip()
+
+
+# MiniMax TTS Configuration
+def get_minimax_api_key() -> str:
+    """MiniMax API key for TTS service."""
+    return str(_read_config().get("minimax_api_key", "")).strip()
+
+
+def get_minimax_base_url() -> str:
+    """MiniMax API base URL."""
+    return str(_read_config().get("minimax_base_url", "https://api.minimaxi.com")).rstrip("/")
+
+
+def get_minimax_model() -> str:
+    """MiniMax TTS model name."""
+    return str(_read_config().get("minimax_model", "speech-2.6-turbo")).strip()
+
+
+def get_minimax_voice_id() -> str:
+    """Default MiniMax voice ID."""
+    return str(_read_config().get("minimax_voice_id", "Chinese (Mandarin)_Lyrical_Voice")).strip()
+
+
+def get_minimax_reference_audio() -> str:
+    """Local wav/mp3 path for MiniMax reference audio (for voice cloning)."""
+    return str(_read_config().get("minimax_reference_audio", "")).strip()
+
+
+def get_minimax_prompt_text() -> str:
+    """Transcript of reference audio for MiniMax voice cloning."""
+    return str(_read_config().get("minimax_prompt_text", "")).strip()
+
+
+def get_minimax_speed() -> float:
+    """MiniMax TTS speech speed (0.5-2.0)."""
+    speed = float(_read_config().get("minimax_speed", 1.0))
+    return max(0.5, min(2.0, speed))
+
+
+def get_minimax_pitch() -> int:
+    """MiniMax TTS pitch adjustment (-10 to 10)."""
+    pitch = int(_read_config().get("minimax_pitch", 0))
+    return max(-10, min(10, pitch))
+
+
+def get_minimax_emotion() -> str:
+    """MiniMax TTS emotion (neutral, happy, sad, angry, calm)."""
+    emotion = str(_read_config().get("minimax_emotion", "neutral")).strip().lower()
+    valid_emotions = {"neutral", "happy", "sad", "angry", "calm"}
+    return emotion if emotion in valid_emotions else "neutral"
+
+
+def get_minimax_max_chunk_chars() -> int:
+    """Maximum characters per chunk for MiniMax TTS."""
+    return int(_read_config().get("minimax_max_chunk_chars", 400))
+
+
+def get_minimax_http_timeout() -> int:
+    """HTTP timeout for MiniMax API requests in seconds."""
+    return int(_read_config().get("minimax_http_timeout", 60))
 
 
 def get_stt_provider() -> str:
@@ -353,6 +413,16 @@ def get_nanobanana2_model() -> str:
     return str(_read_config().get("nanobanana2_model", "gemini-3.1-flash-image"))
 
 
+def get_nanobanana2_request_format() -> str:
+    """
+    Image API protocol mode:
+    - gemini: POST /v1beta/models/{model}:generateContent
+    - openai: POST /v1/images/generations
+    """
+    raw = str(_read_config().get("nanobanana2_request_format", "gemini")).strip().lower()
+    return raw if raw in ("gemini", "openai") else "gemini"
+
+
 def get_nanobanana2_aspect_ratio() -> str:
     return str(_read_config().get("nanobanana2_aspect_ratio", "9:16"))
 
@@ -472,6 +542,11 @@ def get_whisperx_device() -> str:
 def get_whisperx_language_code() -> str:
     """BCP-47 style short code for ``whisperx.load_align_model`` (e.g. ``zh``, ``en``)."""
     return str(_read_config().get("whisperx_language_code", "zh")).strip() or "zh"
+
+
+def get_novel_tts_punctuate_enabled() -> bool:
+    """When True, slightly enhance punctuation for more expressive pauses in Qwen3 TTS."""
+    return bool(_read_config().get("novel_tts_punctuate", False))
 
 
 def equalize_subtitles(srt_path: str, max_chars: int = 10) -> None:
