@@ -5,11 +5,21 @@ from __future__ import annotations
 STYLE_PRESETS: dict[str, str] = {
     "none": "",
     "han_guofeng_woodcut": (
-        "杰作，最佳画质，8k，超精细细节，电影级镜头，中国古代汉代历史题材，新中式国风插画，"
-        "复古木刻版画肌理，粗粝手绘笔触，厚重厚涂质感，暗黑悲凉氛围，肃杀压抑的历史叙事感，"
-        "电影级布光，高对比度，冷青色调与暗血色撞色，低饱和度暗调基底，斑驳风化的材质纹理，"
-        "画面做旧磨损效果，纸张颗粒质感，大景深，戏剧化阴影，广角镜头，极强的空间层次感，"
-        "静态画面带有强烈的故事张力，画面暗角，复古动画电影美学"
+        "graphic novel style, bold black outlines, cel-shaded flat color blocks with painterly brush texture, "
+        "weathered aged surface textures, dark oxblood maroon red and muted cyan teal-blue as dual dominant colors "
+        "with dark red slightly more, the cool tone is cyan teal-blue NOT green, aged peeling vermillion tones NOT vivid bright red, "
+        "extreme chiaroscuro lighting, moody dark atmospheric tone, semi-realistic mature anime illustration, cinematic composition"
+    ),
+    "han_guofeng_woodcut_strong": (
+        "CRITICAL STYLE REQUIREMENTS - MUST FOLLOW:\n"
+        "Art Style: graphic novel style, bold black outlines, cel-shaded flat color blocks with painterly brush texture, "
+        "weathered aged surface textures, semi-realistic mature anime illustration.\n"
+        "Color Palette: dark oxblood maroon red and muted cyan teal-blue as dual dominant colors with dark red slightly more. "
+        "IMPORTANT: the cool tone is cyan teal-blue NOT green. Aged peeling vermillion tones NOT vivid bright red.\n"
+        "Lighting: extreme chiaroscuro lighting, moody dark atmospheric tone.\n"
+        "Composition: cinematic composition, dramatic framing.\n"
+        "Quality: masterpiece, best quality, 8K ultra-detailed.\n"
+        "FORBIDDEN: No bright green tones, no vivid bright red, no modern clean digital look, no cartoon style."
     ),
     "cinematic_clean": (
         "masterpiece, best quality, 8k, ultra detailed, cinematic lighting, "
@@ -45,4 +55,5 @@ def append_global_style_to_image_prompt(prompt: str) -> str:
     style = resolve_global_style_text()
     if not style:
         return prompt
-    return f"{prompt.rstrip()}\n\n【全局画风】\n{style}"
+    # 将全局风格放在最前面，增加权重
+    return f"【全局画风 - 必须遵循】\n{style}\n\n【场景描述】\n{prompt.rstrip()}"

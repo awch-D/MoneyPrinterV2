@@ -93,6 +93,23 @@ def segment_durations_via_whisperx_align(
 
     Raises ``ImportError`` if whisperx is not installed; ``RuntimeError`` on alignment failure.
     """
+    # 禁用代理 + 使用 HuggingFace 国内镜像
+    import os
+    os.environ['NO_PROXY'] = '*'
+    os.environ['no_proxy'] = '*'
+    os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
+    # 设置离线模式优先使用本地缓存
+    os.environ['TRANSFORMERS_OFFLINE'] = '0'  # 允许在线但优先本地
+    os.environ['HF_HUB_OFFLINE'] = '0'
+    
+    proxy_vars = [
+        'HTTP_PROXY', 'HTTPS_PROXY', 'http_proxy', 'https_proxy',
+        'ALL_PROXY', 'all_proxy', 'FTP_PROXY', 'ftp_proxy',
+        'SOCKS_PROXY', 'socks_proxy'
+    ]
+    for var in proxy_vars:
+        os.environ.pop(var, None)
+    
     try:
         import whisperx
     except ImportError as exc:
