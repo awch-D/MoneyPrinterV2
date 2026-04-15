@@ -7,7 +7,7 @@ pipeline:
 
 ## Requirements
 
-- Python 3.12
+- Python 3.11
 - ImageMagick installed locally (`magick` path configured)
 - ffmpeg available (required by MoviePy)
 - Script generation API (OpenAI-compatible `/chat/completions`)
@@ -18,9 +18,8 @@ pipeline:
 ```bash
 cd MoneyPrinterV2
 cp config.example.json config.json
-python3.12 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+python3.11 -m venv .venv312
+.venv312/bin/pip install -r requirements.txt
 ```
 
 ## Configuration
@@ -41,14 +40,13 @@ Full CLI (short video + **novel chapter** pipeline, orientation, etc.) is docume
 Quick start (short / default capability):
 
 ```bash
-source venv/bin/activate
-PYTHONPATH=src python src/main.py --niche "technology" --language "English"
+scripts/run.sh src/main.py --niche "technology" --language "English"
 ```
 
 With a fixed topic:
 
 ```bash
-python src/main.py --niche "technology" --language "English" --topic "Why local AI changes creator workflows"
+scripts/run.sh src/main.py --niche "technology" --language "English" --topic "Why local AI changes creator workflows"
 ```
 
 The command prints a JSON result containing:
